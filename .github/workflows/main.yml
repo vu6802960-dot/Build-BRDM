@@ -1,0 +1,45 @@
+name: Build BRDM Tracker APK
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential git python3 devscripts \
+          libncurses6 libstdc++6 zlib1g-dev libffi-dev libssl-dev \
+          autoconf automake libtool libtool-bin pkg-config m4 texinfo \
+          help2man cmake libjpeg-dev libpng-dev
+          pip install --user --upgrade Cython==0.29.33 virtualenv buildozer
+
+      - name: Build APK with Buildozer
+        run: |
+          export PATH=$PATH:$HOME/.local/bin
+          # Buildozer sẽ tự động đọc buildozer.spec
+          yes | buildozer -v android debug
+        
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRDM-Tracker-OpenCV
+          path: bin/*.apk
