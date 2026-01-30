@@ -1,12 +1,8 @@
-import os
-from datetime import datetime
 from kivy.app import App
-from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.label import Label
-from kivy.uix.popup import Popup
-from kivy.uix.button import Button
+from kivy.clock import Clock
 from kivy.utils import platform
-
+from kivy.uix.boxlayout import BoxLayout
+from datetime import datetime
 from camera_handler import CameraHandler
 from utils import export_to_csv
 
@@ -21,56 +17,45 @@ class BRDMTrackerApp(App):
         self.camera_handler = CameraHandler(self.on_scan_complete)
         return self.root_ui
 
-    def on_status_change(self, instance):
-        if instance.state == 'down':
-            self.current_status = instance.text
+    def on_start(self):
+        # Khóa màn hình dọc và xin quyền
+        if platform == 'android':
+            from android.permissions import request_permissions, Permission
+            request_permissions([Permission.CAMERA, Permission.WRITE_EXTERNAL_STORAGE])
+            try:
+                from plyer import orientation
+                orientation.set_portrait()
+            except: pass
 
     def on_scan(self):
         if not self.root_ui.ids.person_input.text.strip():
-            self.show_popup("Error", "Please enter person name first!")
             return
-        self.camera_handler.open_camera()
+        # Delay nhỏ để hệ thống UI không bị lag khi mở Camera
+        Clock.schedule_once(lambda dt: self.camera_handler.open_camera(), 0.2)
 
     def on_scan_complete(self, result):
-        if not result or not result.get('imei'):
-            self.show_popup("OCR Failed", "Could not read IMEI. Try better lighting.")
-            return
-
-        record = {
-            'datetime': datetime.now().strftime('%d/%m/%Y %H:%M:%S'),
-            'model': result.get('model', 'Unknown'),
-            'imei': result.get('imei', ''),
-            'smsn': result.get('smsn', 'N/A'),
-            'status': self.current_status,
-            'person': self.root_ui.ids.person_input.text.strip()
-        }
-        self.scanned_data.append(record)
-        self.update_ui(record)
+        if result:
+            record = {
+                'datetime': datetime.now().strftime('%H:%M:%S'),
+                'model': result.get('model'),
+                'imei': result.get('imei'),
+                'smsn': result.get('smsn'),
+                'status': self.current_status,
+                'person': self.root_ui.ids.person_input.text.strip()
+            }
+            self.scanned_data.append(record)
+            self.update_ui(record)
 
     def update_ui(self, record):
-        info = f"{record['datetime']} - {record['person']}\n{record['model']} | {record['imei']}"
-        lbl = Label(text=info, size_hint_y=None, height=80, color=(0,0,0,1), halign='left')
-        lbl.bind(size=lbl.setter('text_size'))
-        self.root_ui.ids.display_layout.add_widget(lbl)
+        from kivy.uix.label import Label
+        info = f"{record['model']} | {record['imei']}\n{record['person']}"
+        self.root_ui.ids.display_layout.add_widget(Label(text=info, size_hint_y=None, height=60, color=(0,0,0,1)))
         self.root_ui.ids.counter_label.text = f"Records: {len(self.scanned_data)}"
 
     def on_export(self):
-        if export_to_csv(self.scanned_data):
-            self.show_popup("Success", "Data exported successfully!")
+        export_to_csv(self.scanned_data)
 
     def on_clear_all(self):
         self.scanned_data.clear()
         self.root_ui.ids.display_layout.clear_widgets()
         self.root_ui.ids.counter_label.text = "Records: 0"
-
-    def show_popup(self, title, message):
-        content = BoxLayout(orientation='vertical', padding=10)
-        content.add_widget(Label(text=message))
-        btn = Button(text="OK", size_hint_y=None, height=50)
-        popup = Popup(title=title, content=content, size_hint=(0.8, 0.4))
-        btn.bind(on_press=popup.dismiss)
-        content.add_widget(btn)
-        popup.open()
-
-if __name__ == '__main__':
-    BRDMTrackerApp().run()
