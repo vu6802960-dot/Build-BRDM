@@ -1,0 +1,98 @@
+#:kivy 2.3.0
+
+<BRDMTrackerLayout>:
+    orientation: 'vertical'
+    padding: 10
+    spacing: 10
+    canvas.before:
+        Color:
+            rgba: 0.95, 0.95, 0.95, 1
+        Rectangle:
+            pos: self.pos
+            size: self.size
+
+    Label:
+        text: 'BRDM TRACKER (OpenCV)'
+        font_size: '22sp'
+        size_hint_y: None
+        height: 50
+        bold: True
+        color: 0.2, 0.6, 0.8, 1
+
+    BoxLayout:
+        orientation: 'horizontal'
+        size_hint_y: None
+        height: 50
+        spacing: 10
+
+        ToggleButton:
+            id: borrow_btn
+            text: 'Borrow'
+            group: 'status'
+            state: 'down'
+            background_normal: ''
+            background_color: (0.2, 0.8, 0.4, 1) if self.state == 'down' else (0.7, 0.7, 0.7, 1)
+            on_press: app.on_status_change(self)
+
+        ToggleButton:
+            id: return_btn
+            text: 'Return'
+            group: 'status'
+            background_normal: ''
+            background_color: (0.8, 0.6, 0.2, 1) if self.state == 'down' else (0.7, 0.7, 0.7, 1)
+            on_press: app.on_status_change(self)
+
+    TextInput:
+        id: person_input
+        hint_text: 'Enter person name'
+        size_hint_y: None
+        height: 50
+        multiline: False
+        padding: [10, 15]
+
+    Button:
+        text: '📷 SCAN LABEL'
+        font_size: 20
+        size_hint_y: None
+        height: 65
+        background_normal: ''
+        background_color: 0.2, 0.6, 0.8, 1
+        on_press: app.on_scan()
+
+    Label:
+        id: counter_label
+        text: 'Records: 0'
+        size_hint_y: None
+        height: 30
+        color: 0.3, 0.3, 0.3, 1
+
+    ScrollView:
+        canvas.before:
+            Color:
+                rgba: 1, 1, 1, 1
+            Rectangle:
+                pos: self.pos
+                size: self.size
+        BoxLayout:
+            id: display_layout
+            orientation: 'vertical'
+            size_hint_y: None
+            height: self.minimum_height
+            padding: 10
+            spacing: 10
+
+    BoxLayout:
+        orientation: 'horizontal'
+        size_hint_y: None
+        height: 55
+        spacing: 10
+        Button:
+            text: '📥 EXPORT'
+            background_normal: ''
+            background_color: 0.2, 0.8, 0.4, 1
+            on_press: app.on_export()
+        Button:
+            text: '🗑️ CLEAR'
+            background_normal: ''
+            background_color: 0.8, 0.2, 0.2, 1
+            on_press: app.on_clear_all()
