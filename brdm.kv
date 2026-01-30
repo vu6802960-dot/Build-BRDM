@@ -6,57 +6,61 @@
     spacing: 10
     canvas.before:
         Color:
-            rgba: 0.95, 0.95, 0.95, 1
+            rgba: 0.98, 0.98, 0.98, 1
         Rectangle:
             pos: self.pos
             size: self.size
 
+    # Tiêu đề
     Label:
-        text: 'BRDM TRACKER (OpenCV)'
+        text: 'BRDM TRACKER (ML KIT)'
         font_size: '22sp'
         size_hint_y: None
-        height: 50
+        height: 60
         bold: True
-        color: 0.2, 0.6, 0.8, 1
+        color: 0.1, 0.5, 0.7, 1
 
+    # Trạng thái Mượn/Trả
     BoxLayout:
         orientation: 'horizontal'
         size_hint_y: None
         height: 50
         spacing: 10
-
         ToggleButton:
             id: borrow_btn
-            text: 'Borrow'
+            text: 'BORROW'
             group: 'status'
             state: 'down'
             background_normal: ''
-            background_color: (0.2, 0.8, 0.4, 1) if self.state == 'down' else (0.7, 0.7, 0.7, 1)
+            background_color: (0.2, 0.7, 0.3, 1) if self.state == 'down' else (0.8, 0.8, 0.8, 1)
             on_press: app.on_status_change(self)
-
         ToggleButton:
             id: return_btn
-            text: 'Return'
+            text: 'RETURN'
             group: 'status'
             background_normal: ''
-            background_color: (0.8, 0.6, 0.2, 1) if self.state == 'down' else (0.7, 0.7, 0.7, 1)
+            background_color: (0.9, 0.5, 0.1, 1) if self.state == 'down' else (0.8, 0.8, 0.8, 1)
             on_press: app.on_status_change(self)
 
+    # Nhập liệu người dùng
     TextInput:
         id: person_input
-        hint_text: 'Enter person name'
+        hint_text: 'Scan for: Enter name...'
         size_hint_y: None
         height: 50
         multiline: False
-        padding: [10, 15]
+        font_size: '18sp'
+        padding: [10, 10]
 
+    # Nút quét chính
     Button:
-        text: '📷 SCAN LABEL'
-        font_size: 20
+        text: '📷 START SCAN'
+        font_size: '20sp'
+        bold: True
         size_hint_y: None
-        height: 65
+        height: 70
         background_normal: ''
-        background_color: 0.2, 0.6, 0.8, 1
+        background_color: 0.1, 0.5, 0.7, 1
         on_press: app.on_scan()
 
     Label:
@@ -64,35 +68,30 @@
         text: 'Records: 0'
         size_hint_y: None
         height: 30
-        color: 0.3, 0.3, 0.3, 1
+        color: 0.4, 0.4, 0.4, 1
 
+    # Danh sách hiển thị
     ScrollView:
-        canvas.before:
-            Color:
-                rgba: 1, 1, 1, 1
-            Rectangle:
-                pos: self.pos
-                size: self.size
+        do_scroll_x: False
         BoxLayout:
             id: display_layout
             orientation: 'vertical'
             size_hint_y: None
             height: self.minimum_height
             padding: 10
-            spacing: 10
+            spacing: 15
 
+    # Nút chức năng cuối trang
     BoxLayout:
         orientation: 'horizontal'
         size_hint_y: None
         height: 55
         spacing: 10
         Button:
-            text: '📥 EXPORT'
-            background_normal: ''
-            background_color: 0.2, 0.8, 0.4, 1
+            text: 'EXPORT CSV'
+            background_color: 0.2, 0.6, 0.3, 1
             on_press: app.on_export()
         Button:
-            text: '🗑️ CLEAR'
-            background_normal: ''
+            text: 'CLEAR ALL'
             background_color: 0.8, 0.2, 0.2, 1
             on_press: app.on_clear_all()
