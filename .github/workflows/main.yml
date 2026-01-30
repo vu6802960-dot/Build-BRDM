@@ -1,6 +1,6 @@
-name: Build MLKit APK
+name: Build MLKit APK Fixed
 
-on: 
+on:
   push:
     branches: [ main, master ]
   workflow_dispatch:
@@ -32,12 +32,13 @@ jobs:
       - name: Build with Buildozer
         run: |
           export PATH=$PATH:$HOME/.local/bin
-          # Xóa cache bản build lỗi cũ để tránh lỗi 'gradlew failed' lặp lại
-          rm -rf .buildozer/android/platform/build-arm64-v8a/dists/brdmtracker
+          # Xóa sạch bản build cũ để Gradle tải lại file gradlew sạch
+          # Việc này rất quan trọng để tránh lỗi 'gradlew failed'
+          rm -rf .buildozer/
           yes | buildozer -v android debug
         
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: BRDM-MLKit-Fixed
+          name: BRDM-MLKit-Final
           path: bin/*.apk
