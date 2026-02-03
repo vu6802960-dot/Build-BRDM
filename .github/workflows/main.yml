@@ -1,12 +1,15 @@
-name: Build SMSN App
+name: Build Device Manager
 on: [push, workflow_dispatch]
 
 jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 11
+        uses: actions/setup-java@v4
         with:
           java-version: '11'
           distribution: 'temurin'
@@ -17,14 +20,14 @@ jobs:
           sudo apt-get install -y build-essential git python3 ccache libncurses6 libstdc++6 zlib1g-dev libffi-dev libssl-dev cmake
           pip install --upgrade Cython==0.29.33 virtualenv buildozer
 
-      - name: Build with Buildozer
+      - name: Build APK with Buildozer
         run: |
           export PATH=$PATH:$HOME/.local/bin
-          # Chấp nhận mọi License tự động
+          # Tự động đồng ý mọi yêu cầu từ SDK
           yes | buildozer -v android debug
 
-      - name: Upload APK
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SMSN-Scanner-APK
+          name: Device-Manager-APK
           path: bin/*.apk
