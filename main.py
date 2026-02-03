@@ -9,6 +9,7 @@ from PIL import Image
 from datetime import datetime
 import io, base64, urllib.parse, re, os
 
+# Cấu hình hệ thống
 Window.softinput_mode = "below_target"
 
 KV = '''
@@ -18,19 +19,23 @@ MainScreen:
     spacing: "8dp"
 
     MDLabel:
-        text: "QUẢN LÝ THIẾT BỊ v1.4"
+        text: "QUẢN LÝ THIẾT BỊ v1.5"
         halign: "center"
         bold: True
         font_style: "H6"
         size_hint_y: None
         height: "40dp"
 
-    Camera:
-        id: cam
-        resolution: (1280, 720)
-        play: False 
-        allow_stretch: True
+    # Container trống để chứa Camera (Sẽ được add widget sau khi cấp quyền)
+    BoxLayout:
+        id: camera_container
         size_hint_y: 0.4
+        canvas.before:
+            Color:
+                rgba: 0.1, 0.1, 0.1, 1
+            Rectangle:
+                pos: self.pos
+                size: self.size
 
     MDCard:
         orientation: 'vertical'
@@ -84,6 +89,7 @@ class MainScreen(BoxLayout):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.status_type = "MUON"
+        self.camera_widget = None
 
     def set_status_type(self, s_type):
         self.status_type = s_type
@@ -95,50 +101,72 @@ class MainScreen(BoxLayout):
             self.ids.btn_muon.md_bg_color = (0.5, 0.5, 0.5, 1)
 
     def capture_and_read(self):
-        camera = self.ids.cam
-        if not camera.play or not camera.texture:
+        if not self.camera_widget or not self.camera_widget.play or not self.camera_widget.texture:
             self.ids.data_display.text = "Lỗi: Camera chưa sẵn sàng"
             return
+        
         try:
-            pixels = camera.texture.pixels
-            pil_image = Image.frombytes('RGBA', camera.texture.size, pixels).convert('RGB')
+            pixels = self.camera_widget.texture.pixels
+            pil_image = Image.frombytes('RGBA', self.camera_widget.texture.size, pixels).convert('RGB')
             buf = io.BytesIO()
             pil_image.save(buf, format='JPEG', quality=85)
-            self.ids.data_display.text = "Đang nhận diện..."
+            
+            self.ids.data_display.text = "Đang gửi ảnh đến OCR..."
             base64_image = base64.b64encode(buf.getvalue()).decode('utf-8')
+            
             payload = urllib.parse.urlencode({
                 'apikey': 'helloworld', 
                 'base64Image': f"data:image/jpg;base64,{base64_image}",
                 'language': 'eng'
             })
-            UrlRequest("https://api.ocr.space/parse/image", req_body=payload, on_success=self.on_ocr_success)
+            UrlRequest("https://api.ocr.space/parse/image", 
+                       req_body=payload, 
+                       on_success=self.on_ocr_success,
+                       on_failure=lambda req, res: self.show_error("Lỗi kết nối API"))
         except Exception as e:
-            self.ids.data_display.text = f"Lỗi: {str(e)}"
+            self.ids.data_display.text = f"Lỗi chụp ảnh: {str(e)}"
 
     def on_ocr_success(self, request, result):
         try:
             text = result['ParsedResults'][0]['ParsedText']
             imei = re.search(r'\d{15}', text)
             model = re.search(r'(SM-[A-Z0-9]+)', text)
+            
             lines = text.split('\n')
-            smsn_val = next((l.strip() for l in lines if 8 <= len(l.strip()) <= 12 and any(c.isalpha() for c in l.strip())), "N/A")
-            self.ids.data_display.text = f"Model: {model.group(0) if model else 'N/A'}\nIMEI: {imei.group(0) if imei else 'N/A'}\nSMSN: {smsn_val}"
-        except:
-            self.ids.data_display.text = "Lỗi đọc nhãn"
+            smsn_val = "N/A"
+            for line in lines:
+                clean = line.strip()
+                if 8 <= len(clean) <= 12 and any(c.isalpha() for c in clean):
+                    smsn_val = clean
+                    break
+            
+            self.ids.data_display.text = (
+                f"Model: {model.group(0) if model else 'N/A'}\n"
+                f"IMEI: {imei.group(0) if imei else 'N/A'}\n"
+                f"SMSN: {smsn_val}"
+            )
+        except Exception:
+            self.ids.data_display.text = "Không tìm thấy thông tin trên nhãn"
+
+    def show_error(self, msg):
+        self.ids.data_display.text = msg
 
     def export_data(self):
         user = self.ids.user_input.text
         if not user:
-            self.ids.data_display.text = "VUI LÒNG NHẬP TÊN!"
+            self.ids.data_display.text = "LỖI: CHƯA NHẬP TÊN!"
             return
-        
-        data_text = self.ids.data_display.text.replace('\n', ' | ')
-        log_entry = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] | {user} | {self.status_type} | {data_text}\n"
+            
+        raw_data = self.ids.data_display.text
+        clean_data = raw_data.replace('\n', ' | ')
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_entry = f"[{timestamp}] | {user} | {self.status_type} | {clean_data}\n"
         
         try:
             if platform == 'android':
                 from jnius import autoclass
-                context = autoclass('org.kivy.android.PythonActivity').mActivity
+                PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                context = PythonActivity.mActivity
                 storage_dir = context.getExternalFilesDir(None).getAbsolutePath()
             else:
                 storage_dir = "."
@@ -148,32 +176,49 @@ class MainScreen(BoxLayout):
                 f.write(log_entry)
             self.ids.data_display.text = f"ĐÃ LƯU!\nĐường dẫn: Android/data/.../files/"
         except Exception as e:
-            self.ids.data_display.text = f"Lỗi lưu: {str(e)}"
+            self.ids.data_display.text = f"Lỗi lưu file: {str(e)}"
 
 class LabelApp(MDApp):
     def build(self):
-        self.screen = Builder.load_string(KV)
-        return self.screen
+        self.main_screen = Builder.load_string(KV)
+        return self.main_screen
 
     def on_start(self):
+        # Trì hoãn việc xin quyền để đảm bảo UI load xong
+        Clock.schedule_once(self.request_android_permissions, 0.5)
+
+    def request_android_permissions(self, dt):
         if platform == 'android':
             from android.permissions import request_permissions, Permission
-            request_permissions([Permission.CAMERA, Permission.WRITE_EXTERNAL_STORAGE, Permission.READ_EXTERNAL_STORAGE], self.check_permissions)
+            request_permissions(
+                [Permission.CAMERA, Permission.WRITE_EXTERNAL_STORAGE, Permission.READ_EXTERNAL_STORAGE],
+                self.permission_callback
+            )
         else:
-            self.screen.ids.cam.play = True
+            self.enable_camera()
 
-    def check_permissions(self, permissions, results):
+    def permission_callback(self, permissions, results):
         if all(results):
-            Clock.schedule_once(lambda dt: self.enable_features(), 0.5)
+            # Cấp quyền thành công, tiến hành tạo camera
+            Clock.schedule_once(lambda dt: self.enable_camera(), 0.1)
         else:
-            self.screen.ids.data_display.text = "LỖI: Chưa cấp quyền Camera/Bộ nhớ"
+            self.main_screen.ids.data_display.text = "CẦN CẤP QUYỀN ĐỂ SỬ DỤNG!"
 
-    def enable_features(self):
-        self.screen.ids.cam.play = True
-        self.screen.ids.data_display.text = "Sẵn sàng."
-        from jnius import autoclass
-        activity = autoclass('org.kivy.android.PythonActivity').mActivity
-        activity.getWindow().addFlags(autoclass('android.view.WindowManager$LayoutParams').FLAG_KEEP_SCREEN_ON)
+    def enable_camera(self):
+        from kivy.uix.camera import Camera
+        # Khởi tạo widget camera động sau khi đã có quyền
+        cam = Camera(resolution=(1280, 720), play=True, allow_stretch=True)
+        self.main_screen.camera_widget = cam
+        
+        # Đưa camera vào container
+        self.main_screen.ids.camera_container.add_widget(cam)
+        self.main_screen.ids.data_display.text = "Sẵn sàng."
+        
+        # Giữ màn hình luôn sáng trên Android
+        if platform == 'android':
+            from jnius import autoclass
+            activity = autoclass('org.kivy.android.PythonActivity').mActivity
+            activity.getWindow().addFlags(autoclass('android.view.WindowManager$LayoutParams').FLAG_KEEP_SCREEN_ON)
 
 if __name__ == "__main__":
     LabelApp().run()
