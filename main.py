@@ -18,14 +18,13 @@ MainScreen:
     spacing: "8dp"
 
     MDLabel:
-        text: "DEVICE MANAGER v1.8"
+        text: "DEVICE MANAGER v1.8.1"
         halign: "center"
         bold: True
         font_style: "H6"
         size_hint_y: None
         height: "40dp"
 
-    # Khung chứa Camera (Ban đầu trống để tránh crash)
     BoxLayout:
         id: camera_container
         size_hint_y: 0.4
@@ -102,7 +101,6 @@ class MainScreen(BoxLayout):
         self.ids.btn_tra.md_bg_color = (0.8, 0.2, 0.2, 1) if s_type == "TRA" else (0.5, 0.5, 0.5, 1)
 
     def handle_scan_logic(self):
-        # Nếu camera chưa bật, bật nó lên. Nếu bật rồi, tiến hành chụp ảnh.
         if not self.camera_active:
             self.enable_camera_widget()
         else:
@@ -111,6 +109,7 @@ class MainScreen(BoxLayout):
     def enable_camera_widget(self):
         from kivy.uix.camera import Camera
         try:
+            # Khởi tạo camera không resolution để tối ưu độ tương thích
             self.camera_widget = Camera(play=True, allow_stretch=True)
             self.ids.camera_container.clear_widgets()
             self.ids.camera_container.add_widget(self.camera_widget)
@@ -145,17 +144,25 @@ class MainScreen(BoxLayout):
             text = result['ParsedResults'][0]['ParsedText']
             imei = re.search(r'\d{15}', text)
             model = re.search(r'(SM-[A-Z0-9]+)', text)
-            self.ids.data_display.text = f"Model: {model.group(0) if model else 'N/A'}\\nIMEI: {imei.group(0) if imei else 'N/A'}"
+            m_val = model.group(0) if model else 'N/A'
+            i_val = imei.group(0) if imei else 'N/A'
+            self.ids.data_display.text = f"Model: {m_val}\\nIMEI: {i_val}"
         except:
-            self.ids.data_display.text = "Kết quả: Không tìm thấy IMEI/Model"
+            self.ids.data_display.text = "Kết quả: Không tìm thấy dữ liệu"
 
     def export_data(self):
+        # Lấy tên người dùng an toàn
         user = self.user_input.text if hasattr(self, 'user_input') else ""
         if not user:
             self.ids.data_display.text = "VUI LÒNG NHẬP TÊN NGƯỜI LÀM!"
             return
         
-        log_entry = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] | {user} | {self.status_type} | {self.ids.data_display.text.replace('\\n', ' | ')}\\n"
+        # CÁCH 1: Xử lý chuỗi xuống dòng TRƯỚC khi đưa vào f-string để tránh SyntaxError
+        display_text = self.ids.data_display.text.replace('\\n', ' | ').replace('\n', ' | ')
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        # f-string sạch, không chứa dấu gạch chéo ngược trong biểu thức { }
+        log_entry = f"[{timestamp}] | {user} | {self.status_type} | {display_text}\n"
         
         try:
             if platform == 'android':
@@ -165,7 +172,8 @@ class MainScreen(BoxLayout):
             else:
                 storage_dir = "."
             
-            with open(os.path.join(storage_dir, "device_logs.txt"), "a", encoding='utf-8') as f:
+            file_path = os.path.join(storage_dir, "device_logs.txt")
+            with open(file_path, "a", encoding='utf-8') as f:
                 f.write(log_entry)
             self.ids.data_display.text = "LƯU LOG THÀNH CÔNG!"
         except Exception as e:
@@ -178,14 +186,22 @@ class LabelApp(MDApp):
         return self.screen
 
     def on_start(self):
+        # Nạp widget input sau khi App đã khởi tạo xong giao diện chính
         Clock.schedule_once(self.create_input_field, 0.2)
         if platform == 'android':
             from android.permissions import request_permissions, Permission
-            request_permissions([Permission.CAMERA, Permission.WRITE_EXTERNAL_STORAGE, Permission.READ_EXTERNAL_STORAGE])
+            request_permissions([
+                Permission.CAMERA, 
+                Permission.WRITE_EXTERNAL_STORAGE, 
+                Permission.READ_EXTERNAL_STORAGE
+            ])
 
     def create_input_field(self, dt):
         from kivymd.uix.textfield import MDTextField
-        self.screen.user_input = MDTextField(hint_text="Tên người thực hiện", mode="rectangle")
+        self.screen.user_input = MDTextField(
+            hint_text="Tên người thực hiện", 
+            mode="rectangle"
+        )
         self.screen.ids.input_container.add_widget(self.screen.user_input)
 
 if __name__ == "__main__":
