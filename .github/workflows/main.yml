@@ -1,33 +1,43 @@
-name: Build Device Manager
-on: [push, workflow_dispatch]
+name: Build Samsung APK
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-22.04
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v3
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v3
         with:
           java-version: '17'
           distribution: 'temurin'
 
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential git python3 ccache libncurses6 libstdc++6 zlib1g-dev libffi-dev libssl-dev cmake
-          pip install --upgrade Cython==0.29.33 virtualenv buildozer
+          sudo apt-get install -y build-essential git python3-dev libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev libportmidi-dev libswscale-dev libavformat-dev libavcodec-dev zlib1g-dev libgstreamer1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good libffi-dev libssl-dev autoconf automake libtool pkg-config cmake ant ccache unzip
+          pip install --upgrade pip
+          pip install "Cython<3.0" wheel setuptools buildozer
 
-      - name: Build APK
+      - name: Build with Buildozer
         run: |
-          export PATH=$PATH:$HOME/.local/bin
-          export GRADLE_OPTS="-Dorg.gradle.daemon=false"
-          yes | buildozer -v android debug
+          buildozer android pydeps
+          buildozer -v android debug
+        env:
+          JAVA_HOME: ${{ env.JAVA_HOME }}
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v3
         with:
-          name: Device-Manager-APK
+          name: Samsung_Stable_v2.2
           path: bin/*.apk
