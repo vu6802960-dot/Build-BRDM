@@ -18,7 +18,7 @@ MainScreen:
     spacing: "8dp"
 
     MDLabel:
-        text: "QUẢN LÝ THIẾT BỊ v1.6"
+        text: "QUẢN LÝ THIẾT BỊ v1.7"
         halign: "center"
         bold: True
         font_style: "H6"
@@ -43,7 +43,6 @@ MainScreen:
         elevation: 2
         radius: [15, ]
 
-        # Khung trống để nạp TextField sau
         BoxLayout:
             id: input_container
             size_hint_y: None
@@ -65,7 +64,7 @@ MainScreen:
 
         MDLabel:
             id: data_display
-            text: "Trạng thái: Đang khởi động hệ thống..."
+            text: "Trạng thái: Đang chờ cấp quyền..."
             theme_text_color: "Secondary"
             font_style: "Body2"
 
@@ -96,13 +95,14 @@ class MainScreen(BoxLayout):
 
     def capture_and_read(self):
         if not hasattr(self, 'camera_widget') or not self.camera_widget.play:
+            self.ids.data_display.text = "Camera chưa sẵn sàng!"
             return
         try:
             pixels = self.camera_widget.texture.pixels
             pil_image = Image.frombytes('RGBA', self.camera_widget.texture.size, pixels).convert('RGB')
             buf = io.BytesIO()
             pil_image.save(buf, format='JPEG', quality=85)
-            self.ids.data_display.text = "Đang nhận diện..."
+            self.ids.data_display.text = "Đang quét OCR..."
             base64_image = base64.b64encode(buf.getvalue()).decode('utf-8')
             payload = urllib.parse.urlencode({
                 'apikey': 'helloworld', 
@@ -118,19 +118,17 @@ class MainScreen(BoxLayout):
             text = result['ParsedResults'][0]['ParsedText']
             imei = re.search(r'\d{15}', text)
             model = re.search(r'(SM-[A-Z0-9]+)', text)
-            self.ids.data_display.text = f"Model: {model.group(0) if model else 'N/A'}\nIMEI: {imei.group(0) if imei else 'N/A'}"
+            self.ids.data_display.text = f"Model: {model.group(0) if model else 'N/A'}\\nIMEI: {imei.group(0) if imei else 'N/A'}"
         except:
-            self.ids.data_display.text = "Không đọc được dữ liệu"
+            self.ids.data_display.text = "Không tìm thấy dữ liệu trên nhãn"
 
     def export_data(self):
-        # Lấy text an toàn từ widget động
         user = self.user_input.text if hasattr(self, 'user_input') else ""
         if not user:
-            self.ids.data_display.text = "CẦN NHẬP TÊN!"
+            self.ids.data_display.text = "HÃY NHẬP TÊN NGƯỜI LÀM!"
             return
         
-        data_text = self.ids.data_display.text.replace('\n', ' | ')
-        log_entry = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] | {user} | {self.status_type} | {data_text}\n"
+        log_entry = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] | {user} | {self.status_type} | {self.ids.data_display.text.replace('\\n', ' | ')}\\n"
         
         try:
             if platform == 'android':
@@ -142,7 +140,7 @@ class MainScreen(BoxLayout):
             
             with open(os.path.join(storage_dir, "device_logs.txt"), "a", encoding='utf-8') as f:
                 f.write(log_entry)
-            self.ids.data_display.text = "ĐÃ LƯU THÀNH CÔNG!"
+            self.ids.data_display.text = "LƯU THÀNH CÔNG!"
         except Exception as e:
             self.ids.data_display.text = f"Lỗi lưu: {str(e)}"
 
@@ -153,39 +151,34 @@ class LabelApp(MDApp):
         return self.screen
 
     def on_start(self):
-        # Nạp MDTextField bằng code để tránh lỗi AttributeError trong log 
         Clock.schedule_once(self.create_input_field, 0.1)
-        
         if platform == 'android':
             from android.permissions import request_permissions, Permission
             request_permissions([Permission.CAMERA, Permission.WRITE_EXTERNAL_STORAGE], self.check_permissions)
         else:
-            Clock.schedule_once(self.enable_camera, 0.5)
+            Clock.schedule_once(self.enable_camera, 1.0)
 
     def create_input_field(self, dt):
         from kivymd.uix.textfield import MDTextField
-        self.screen.user_input = MDTextField(
-            hint_text="Tên người thực hiện",
-            mode="rectangle",
-            size_hint_y=None,
-            height="50dp"
-        )
+        self.screen.user_input = MDTextField(hint_text="Tên người thực hiện", mode="rectangle")
         self.screen.ids.input_container.add_widget(self.screen.user_input)
 
     def check_permissions(self, permissions, results):
         if all(results):
-            Clock.schedule_once(self.enable_camera, 0.5)
+            # Tăng độ trễ lên 1.2 giây để tránh lỗi 'setParameters failed'
+            Clock.schedule_once(self.enable_camera, 1.2)
         else:
-            self.screen.ids.data_display.text = "Cần cấp quyền để chạy!"
+            self.screen.ids.data_display.text = "LỖI: Chưa được cấp quyền!"
 
     def enable_camera(self, dt):
         from kivy.uix.camera import Camera
         try:
-            self.screen.camera_widget = Camera(resolution=(1280, 720), play=True)
+            # TỐI ƯU: Không chỉ định resolution để Android tự chọn bản phù hợp nhất
+            self.screen.camera_widget = Camera(play=True, allow_stretch=True)
             self.screen.ids.camera_container.add_widget(self.screen.camera_widget)
-            self.screen.ids.data_display.text = "Sẵn sàng."
+            self.screen.ids.data_display.text = "Hệ thống sẵn sàng."
         except Exception as e:
-            self.screen.ids.data_display.text = f"Lỗi Camera: {str(e)}"
+            self.screen.ids.data_display.text = f"Lỗi kết nối Camera: {str(e)}"
 
 if __name__ == "__main__":
     LabelApp().run()
