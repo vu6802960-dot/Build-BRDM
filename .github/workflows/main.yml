@@ -1,4 +1,4 @@
-name: Build Samsung APK
+name: Build Samsung Device Manager v2.3
 on:
   push:
     branches: [ main ]
@@ -9,41 +9,77 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      # Cập nhật checkout lên v4
-      - uses: actions/checkout@v4
+      # 1. Checkout mã nguồn (Cập nhật v4)
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      # Cập nhật setup-java lên v4
+      # 2. Thiết lập Java 17 (Bắt buộc cho Android API 33 trên Samsung)
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      # Cập nhật setup-python lên v5 (bản mới nhất)
+      # 3. Thiết lập Python (Cập nhật v5)
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install Dependencies
+      # 4. Cài đặt Dependencies hệ thống (Sửa lỗi "held broken packages")
+      - name: Install System Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential git python3-dev libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev libportmidi-dev libswscale-dev libavformat-dev libavcodec-dev zlib1g-dev libgstreamer1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good libffi-dev libssl-dev autoconf automake libtool pkg-config cmake ant ccache unzip
+          
+          # Giải quyết trực tiếp lỗi libgstreamer1.0-dev bằng cách cài trước phụ thuộc
+          sudo apt-get install -y libunwind-dev
+          
+          # Cài đặt toàn bộ thư viện cần thiết cho Kivy & Samsung Camera
+          sudo apt-get install -f -y \
+            build-essential \
+            git \
+            python3-dev \
+            libsdl2-dev \
+            libsdl2-image-dev \
+            libsdl2-mixer-dev \
+            libsdl2-ttf-dev \
+            libportmidi-dev \
+            libswscale-dev \
+            libavformat-dev \
+            libavcodec-dev \
+            zlib1g-dev \
+            libgstreamer1.0-dev \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
+            libffi-dev \
+            libssl-dev \
+            autoconf \
+            automake \
+            libtool \
+            pkg-config \
+            cmake \
+            ant \
+            ccache \
+            unzip
+
+          # Cập nhật công cụ build Python (Ép Cython < 3.0 để ổn định)
           pip install --upgrade pip
           pip install "Cython<3.0" wheel setuptools buildozer
 
+      # 5. Thực hiện Build APK bằng Buildozer
       - name: Build with Buildozer
         run: |
+          # Chạy pydeps để kiểm tra thư viện trước khi build
           buildozer android pydeps
+          # Build bản debug (đã cấu hình android.accept_sdk_license = True trong .spec)
           buildozer -v android debug
         env:
           JAVA_HOME: ${{ env.JAVA_HOME }}
 
-      # CẬP NHẬT QUAN TRỌNG: Chuyển v3 sang v4
+      # 6. Tải file APK về máy (Cập nhật v4)
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Samsung_Stable_v2.3
           path: bin/*.apk
-          # Thêm dòng này để tránh lỗi nếu build nhiều lần trùng tên
           overwrite: true
