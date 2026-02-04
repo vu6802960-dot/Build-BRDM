@@ -30,14 +30,14 @@ orientation = portrait
 android.permissions = CAMERA, INTERNET, WRITE_EXTERNAL_STORAGE, READ_EXTERNAL_STORAGE
 
 # (int) Target Android API (Dùng API 34 cho Android 14)
-android.api = 34
+android.api = 33
 
 # (int) Minimum API hỗ trợ
 android.minapi = 21
 
 # (str) Phiên bản NDK và Build Tools phù hợp với Java 17
 android.ndk = 25b
-android.build_tools_version = 34.0.0
+android.build_tools_version = 33.0.0
 
 # (bool) Sử dụng lưu trữ dữ liệu riêng tư (Khuyên dùng cho Android 11+)
 android.private_storage = True
@@ -67,3 +67,4 @@ log_level = 2
 
 # (int) Cảnh báo nếu chạy buildozer bằng quyền root
 warn_on_root = 1
+
