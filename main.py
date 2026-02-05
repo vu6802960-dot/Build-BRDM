@@ -1,173 +1,159 @@
-from kivymd.app import MDApp
+import kivy
+from kivy.app import App
 from kivy.lang import Builder
-from kivy.uix.screenmanager import ScreenManager, Screen
-from kivy.clock import Clock
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.button import Button
+from kivy.uix.label import Label
+from kivy.uix.camera import Camera
+from kivy.uix.textinput import TextInput
 from kivy.utils import platform
+from kivy.clock import Clock
 from kivy.graphics import Rotate, PushMatrix, PopMatrix
 
-# Giao diện đầy đủ các thành phần nghiệp vụ
+# Giao diện dùng Kivy thuần (Native) để đảm bảo không bị văng trên Samsung
 KV = r'''
-ScreenManager:
-    LoadingScreen:
-    MainScreen:
+<CustomButton@Button>:
+    background_normal: ''
+    background_color: (0.1, 0.5, 0.8, 1)
+    font_size: '16sp'
+    size_hint_y: None
+    height: '50dp'
 
-<LoadingScreen>:
-    name: 'loading'
-    MDBoxLayout:
+BoxLayout:
+    orientation: 'vertical'
+    padding: '10dp'
+    spacing: '10dp'
+    canvas.before:
+        Color:
+            rgba: (0.95, 0.95, 0.95, 1)
+        Rectangle:
+            pos: self.pos
+            size: self.size
+
+    Label:
+        text: "DEVICE MANAGER PRO v4.7"
+        color: (0, 0, 0, 1)
+        bold: True
+        size_hint_y: None
+        height: '40dp'
+
+    # Khung Camera
+    BoxLayout:
+        id: cam_container
+        size_hint_y: 0.4
+        canvas.before:
+            Color:
+                rgba: (0, 0, 0, 1)
+            Rectangle:
+                pos: self.pos
+                size: self.size
+        Label:
+            text: "Camera Preview"
+            color: (0.5, 0.5, 0.5, 1)
+
+    # Vùng nhập liệu
+    BoxLayout:
         orientation: 'vertical'
-        md_bg_color: 1, 1, 1, 1
-        MDLabel:
-            text: "DEVICE MANAGER PRO\nĐang khởi tạo hệ thống..."
-            halign: "center"
-            theme_text_color: "Primary"
-            font_style: "Button"
-
-<MainScreen>:
-    name: 'main'
-    MDBoxLayout:
-        orientation: 'vertical'
-        padding: "12dp"
-        spacing: "10dp"
-
-        # 1. CAMERA VÙNG HIỂN THỊ (Sẽ xoay dọc -90 độ)
-        MDCard:
-            size_hint_y: 0.35
-            md_bg_color: 0, 0, 0, 1
-            radius: [15,]
-            RelativeLayout:
-                id: cam_container
-                MDLabel:
-                    text: "Camera Screen"
-                    halign: "center"
-                    theme_text_color: "Custom"
-                    text_color: 1, 1, 1, 0.3
-
-        # 2. FORM NHẬP LIỆU & QUẢN LÝ
-        MDCard:
-            orientation: 'vertical'
-            padding: "15dp"
-            spacing: "10dp"
-            radius: [15,]
-            elevation: 1
-            size_hint_y: 0.55
-
-            MDTextField:
-                id: borrower_name
-                hint_text: "Tên người mượn / trả"
-                mode: "rectangle"
-                icon_left: "account"
-
-            # Ô chọn Mượn/Trả (Dạng Toggle Button chuyên nghiệp)
-            MDBoxLayout:
-                size_hint_y: None
-                height: "50dp"
-                spacing: "10dp"
-                MDLabel:
-                    text: "Loại hình:"
-                    bold: True
-                    size_hint_x: 0.4
-                MDRectangleFlatIconButton:
-                    id: type_btn
-                    text: "MƯỢN"
-                    icon: "export"
-                    size_hint_x: 0.6
-                    on_release: root.toggle_type()
-
-            MDLabel:
-                text: "DỮ LIỆU ĐÃ QUÉT:"
-                font_style: "Caption"
-                bold: True
-
-            # 3. VÙNG HIỂN THỊ DỮ LIỆU QUÉT ĐƯỢC
-            ScrollView:
-                MDLabel:
-                    id: scan_result
-                    text: "Chưa có dữ liệu scan..."
-                    size_hint_y: None
-                    height: self.texture_size[1]
-                    theme_text_color: "Secondary"
-
-        # 4. HÀNG NÚT BẤM ĐIỀU KHIỂN
-        MDBoxLayout:
+        size_hint_y: 0.5
+        spacing: '5dp'
+        
+        Label:
+            text: "Tên người mượn/trả:"
+            color: (0, 0, 0, 1)
+            halign: 'left'
+            text_size: self.size
             size_hint_y: None
-            height: "55dp"
-            spacing: "10dp"
+            height: '25dp'
+        
+        TextInput:
+            id: user_input
+            multiline: False
+            size_hint_y: None
+            height: '45dp'
+            hint_text: "Nhập tên tại đây..."
 
-            MDFillRoundFlatButton:
-                id: scan_btn
-                text: "BẬT CAMERA QUÉT"
-                size_hint_x: 0.7
-                on_release: root.activate_camera()
-            
-            MDFillRoundFlatIconButton:
-                text: "EXPORT"
-                icon: "file-export"
-                size_hint_x: 0.3
-                md_bg_color: 0.5, 0.5, 0.5, 1
-                on_release: root.export_data()
+        BoxLayout:
+            size_hint_y: None
+            height: '50dp'
+            spacing: '10dp'
+            Button:
+                id: type_btn
+                text: "CHẾ ĐỘ: MƯỢN"
+                on_release: app.toggle_mode()
+            Button:
+                text: "XUẤT FILE CSV"
+                background_color: (0.5, 0.5, 0.5, 1)
+                on_release: app.export_data()
+
+        Label:
+            text: "DỮ LIỆU QUÉT ĐƯỢC:"
+            color: (0, 0, 0, 1)
+            bold: True
+            size_hint_y: None
+            height: '25dp'
+        
+        Label:
+            id: result_data
+            text: "Đang chờ quét..."
+            color: (0.2, 0.2, 0.2, 1)
+            valign: 'top'
+            text_size: self.size
+
+    CustomButton:
+        id: main_btn
+        text: "1. CẤP QUYỀN & MỞ CAM"
+        on_release: app.handle_logic()
 '''
 
-class LoadingScreen(Screen):
-    pass
-
-class MainScreen(Screen):
-    def toggle_type(self):
-        if self.ids.type_btn.text == "MƯỢN":
-            self.ids.type_btn.text = "TRẢ"
-            self.ids.type_btn.icon = "import"
-        else:
-            self.ids.type_btn.text = "MƯỢN"
-            self.ids.type_btn.icon = "export"
-
-    def activate_camera(self):
-        # Xin quyền trước khi mở
-        if platform == 'android':
-            from android.permissions import request_permissions, Permission
-            request_permissions([Permission.CAMERA])
-        
-        self.ids.scan_result.text = "Đang khởi động Camera..."
-        self.ids.scan_btn.disabled = True
-        Clock.schedule_once(self.deferred_camera_load, 1.5)
-
-    def deferred_camera_load(self, dt):
-        from kivy.uix.camera import Camera
-        try:
-            self.camera_obj = Camera(play=True, resolution=(-1, -1))
-            
-            # FIX: XOAY CAMERA DỌC CHO SAMSUNG
-            with self.camera_obj.canvas.before:
-                PushMatrix()
-                Rotate(angle=-90, origin=self.camera_obj.center)
-            with self.camera_obj.canvas.after:
-                PopMatrix()
-                
-            self.ids.cam_container.clear_widgets()
-            self.ids.cam_container.add_widget(self.camera_obj)
-            self.ids.scan_result.text = "Hệ thống sẵn sàng quét dữ liệu."
-            self.ids.scan_btn.text = "QUÉT (SCAN)"
-            self.ids.scan_btn.disabled = False
-        except Exception as e:
-            self.ids.scan_result.text = f"Lỗi camera: {str(e)}"
-
-    def export_data(self):
-        # Logic xuất CSV đơn giản
-        user = self.ids.borrower_name.text
-        if not user:
-            self.ids.scan_result.text = "LỖI: Vui lòng nhập tên!"
-            return
-        self.ids.scan_result.text = f"Đã xuất file thành công cho: {user}"
-
-class MainApp(MDApp):
+class DeviceApp(App):
     def build(self):
-        self.theme_cls.primary_palette = "Blue"
+        self.step = 1
+        self.mode = "MƯỢN"
         return Builder.load_string(KV)
 
-    def on_start(self):
-        # Giữ màn hình Loading 2 giây để Samsung ổn định RAM
-        Clock.schedule_once(self.switch_to_main, 2)
+    def toggle_mode(self):
+        if self.mode == "MƯỢN":
+            self.mode = "TRẢ"
+            self.root.ids.type_btn.background_color = (0.8, 0.2, 0.2, 1)
+        else:
+            self.mode = "MƯỢN"
+            self.root.ids.type_btn.background_color = (0.1, 0.5, 0.8, 1)
+        self.root.ids.type_btn.text = f"CHẾ ĐỘ: {self.mode}"
 
-    def switch_to_main(self, dt):
-        self.root.current = 'main'
+    def handle_logic(self):
+        if self.step == 1:
+            if platform == 'android':
+                from android.permissions import request_permissions, Permission
+                request_permissions([Permission.CAMERA])
+            self.root.ids.main_btn.text = "2. KHỞI CHẠY CAMERA"
+            self.step = 2
+        elif self.step == 2:
+            self.start_camera()
+
+    def start_camera(self):
+        try:
+            cam = Camera(play=True, resolution=(-1, -1))
+            
+            # XOAY DỌC CAMERA CHO SAMSUNG
+            with cam.canvas.before:
+                PushMatrix()
+                Rotate(angle=-90, origin=cam.center)
+            with cam.canvas.after:
+                PopMatrix()
+                
+            self.root.ids.cam_container.clear_widgets()
+            self.root.ids.cam_container.add_widget(cam)
+            self.root.ids.main_btn.text = "QUÉT DỮ LIỆU (SCAN)"
+            self.step = 3
+        except Exception as e:
+            self.root.ids.result_data.text = f"Lỗi: {e}"
+
+    def export_data(self):
+        name = self.root.ids.user_input.text
+        if not name:
+            self.root.ids.result_data.text = "Vui lòng nhập tên!"
+            return
+        self.root.ids.result_data.text = f"Đã xuất dữ liệu cho {name}"
 
 if __name__ == '__main__':
-    MainApp().run()
+    DeviceApp().run()
