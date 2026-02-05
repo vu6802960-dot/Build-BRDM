@@ -1,24 +1,15 @@
 import kivy
 from kivy.app import App
 from kivy.lang import Builder
-from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.button import Button
-from kivy.uix.label import Label
 from kivy.uix.camera import Camera
-from kivy.uix.textinput import TextInput
 from kivy.utils import platform
 from kivy.clock import Clock
 from kivy.graphics import Rotate, PushMatrix, PopMatrix
+import os
+import datetime
 
-# Giao diện dùng Kivy thuần (Native) để đảm bảo không bị văng trên Samsung
+# Giao diện Native Kivy siêu nhẹ, chống văng tuyệt đối
 KV = r'''
-<CustomButton@Button>:
-    background_normal: ''
-    background_color: (0.1, 0.5, 0.8, 1)
-    font_size: '16sp'
-    size_hint_y: None
-    height: '50dp'
-
 BoxLayout:
     orientation: 'vertical'
     padding: '10dp'
@@ -31,13 +22,13 @@ BoxLayout:
             size: self.size
 
     Label:
-        text: "DEVICE MANAGER PRO v4.7"
+        text: "DEVICE MANAGER PRO v4.8.1"
         color: (0, 0, 0, 1)
         bold: True
         size_hint_y: None
         height: '40dp'
 
-    # Khung Camera
+    # Khung hiển thị Camera
     BoxLayout:
         id: cam_container
         size_hint_y: 0.4
@@ -48,29 +39,23 @@ BoxLayout:
                 pos: self.pos
                 size: self.size
         Label:
-            text: "Camera Preview"
+            id: cam_status
+            text: "Đang đợi khởi động Camera..."
             color: (0.5, 0.5, 0.5, 1)
 
-    # Vùng nhập liệu
+    # Vùng nhập liệu và hiển thị trạng thái
     BoxLayout:
         orientation: 'vertical'
         size_hint_y: 0.5
         spacing: '5dp'
-        
-        Label:
-            text: "Tên người mượn/trả:"
-            color: (0, 0, 0, 1)
-            halign: 'left'
-            text_size: self.size
-            size_hint_y: None
-            height: '25dp'
         
         TextInput:
             id: user_input
             multiline: False
             size_hint_y: None
             height: '45dp'
-            hint_text: "Nhập tên tại đây..."
+            hint_text: "Nhập tên người thực hiện..."
+            padding: [10, 10]
 
         BoxLayout:
             size_hint_y: None
@@ -79,81 +64,130 @@ BoxLayout:
             Button:
                 id: type_btn
                 text: "CHẾ ĐỘ: MƯỢN"
+                background_normal: ''
+                background_color: (0.1, 0.5, 0.8, 1)
                 on_release: app.toggle_mode()
             Button:
                 text: "XUẤT FILE CSV"
+                background_normal: ''
                 background_color: (0.5, 0.5, 0.5, 1)
                 on_release: app.export_data()
 
-        Label:
-            text: "DỮ LIỆU QUÉT ĐƯỢC:"
-            color: (0, 0, 0, 1)
-            bold: True
-            size_hint_y: None
-            height: '25dp'
-        
-        Label:
-            id: result_data
-            text: "Đang chờ quét..."
-            color: (0.2, 0.2, 0.2, 1)
-            valign: 'top'
-            text_size: self.size
+        # Vùng hiển thị thông báo/dữ liệu quét
+        ScrollView:
+            canvas.before:
+                Color:
+                    rgba: (0.9, 0.9, 0.9, 1)
+                Rectangle:
+                    pos: self.pos
+                    size: self.size
+            Label:
+                id: result_data
+                text: "Trạng thái: Sẵn sàng"
+                color: (0.1, 0.1, 0.1, 1)
+                text_size: self.width, None
+                size_hint_y: None
+                height: self.texture_size[1]
+                halign: 'center'
+                padding: [10, 10]
 
-    CustomButton:
+    # Nút điều khiển chính
+    Button:
         id: main_btn
-        text: "1. CẤP QUYỀN & MỞ CAM"
+        text: "BƯỚC 1: CẤP QUYỀN CAMERA"
+        background_normal: ''
+        background_color: (0.2, 0.6, 0.2, 1)
+        size_hint_y: None
+        height: '60dp'
+        bold: True
         on_release: app.handle_logic()
 '''
 
 class DeviceApp(App):
     def build(self):
         self.step = 1
-        self.mode = "MƯỢN"
+        self.mode = "MUON"
         return Builder.load_string(KV)
 
     def toggle_mode(self):
-        if self.mode == "MƯỢN":
-            self.mode = "TRẢ"
+        if self.mode == "MUON":
+            self.mode = "TRA"
+            self.root.ids.type_btn.text = "CHẾ ĐỘ: TRẢ"
             self.root.ids.type_btn.background_color = (0.8, 0.2, 0.2, 1)
         else:
-            self.mode = "MƯỢN"
+            self.mode = "MUON"
+            self.root.ids.type_btn.text = "CHẾ ĐỘ: MƯỢN"
             self.root.ids.type_btn.background_color = (0.1, 0.5, 0.8, 1)
-        self.root.ids.type_btn.text = f"CHẾ ĐỘ: {self.mode}"
 
     def handle_logic(self):
         if self.step == 1:
             if platform == 'android':
                 from android.permissions import request_permissions, Permission
-                request_permissions([Permission.CAMERA])
-            self.root.ids.main_btn.text = "2. KHỞI CHẠY CAMERA"
+                request_permissions([
+                    Permission.CAMERA, 
+                    Permission.WRITE_EXTERNAL_STORAGE, 
+                    Permission.READ_EXTERNAL_STORAGE
+                ])
+            self.root.ids.main_btn.text = "BƯỚC 2: KHỞI CHẠY CAMERA"
+            self.root.ids.result_data.text = "Đã xin quyền. Hãy nhấn Bước 2."
             self.step = 2
         elif self.step == 2:
             self.start_camera()
 
     def start_camera(self):
         try:
-            cam = Camera(play=True, resolution=(-1, -1))
+            # Sử dụng độ phân giải phổ biến để Samsung dễ chấp nhận
+            self.cam = Camera(play=True, resolution=(640, 480), index=0)
             
-            # XOAY DỌC CAMERA CHO SAMSUNG
-            with cam.canvas.before:
+            # Xoay dọc Texture cho Samsung
+            with self.cam.canvas.before:
                 PushMatrix()
-                Rotate(angle=-90, origin=cam.center)
-            with cam.canvas.after:
+                Rotate(angle=-90, origin=self.cam.center)
+            with self.cam.canvas.after:
                 PopMatrix()
                 
             self.root.ids.cam_container.clear_widgets()
-            self.root.ids.cam_container.add_widget(cam)
-            self.root.ids.main_btn.text = "QUÉT DỮ LIỆU (SCAN)"
+            self.root.ids.cam_container.add_widget(self.cam)
+            
+            self.root.ids.main_btn.text = "BƯỚC 3: QUÉT DỮ LIỆU"
+            self.root.ids.result_data.text = "Camera đã bật thành công!"
             self.step = 3
         except Exception as e:
-            self.root.ids.result_data.text = f"Lỗi: {e}"
+            self.root.ids.result_data.text = f"Lỗi khởi tạo Camera: {str(e)}"
 
     def export_data(self):
         name = self.root.ids.user_input.text
         if not name:
-            self.root.ids.result_data.text = "Vui lòng nhập tên!"
+            self.root.ids.result_data.text = "LỖI: Vui lòng nhập tên người thực hiện!"
             return
-        self.root.ids.result_data.text = f"Đã xuất dữ liệu cho {name}"
+
+        # Lấy thời gian thực
+        now = datetime.datetime.now()
+        dt_string = now.strftime("%d/%m/%Y %H:%M:%S")
+
+        # Xác định đường dẫn lưu file
+        if platform == 'android':
+            from android.storage import primary_external_storage_path
+            dir_path = primary_external_storage_path()
+        else:
+            dir_path = os.path.expanduser("~")
+
+        file_name = "Log_ThietBi.csv"
+        full_path = os.path.join(dir_path, file_name)
+
+        try:
+            file_exists = os.path.isfile(full_path)
+            with open(full_path, 'a', encoding='utf-8') as f:
+                if not file_exists:
+                    f.write("Thoi Gian,Nguoi Thuc Hien,Che Do,Du Lieu Quet\n")
+                
+                # Ghi dòng dữ liệu
+                scan_val = "N/A" # Sẽ thay bằng giá trị quét mã ở bản sau
+                f.write(f"{dt_string},{name},{self.mode},{scan_val}\n")
+            
+            self.root.ids.result_data.text = f"ĐÃ LƯU: {dt_string}\nTại: {full_path}"
+        except Exception as e:
+            self.root.ids.result_data.text = f"Lỗi lưu file: {str(e)}"
 
 if __name__ == '__main__':
     DeviceApp().run()
