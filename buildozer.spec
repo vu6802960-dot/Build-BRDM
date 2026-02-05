@@ -1,12 +1,12 @@
 [app]
-title = Device Manager
+title = Device Manager Pro
 package.name = samsungdm
 package.domain = org.vudot
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,ttf
-version = 3.4.0
+version = 4.0.0
 
-# RÚT GỌN TỐI ĐA: Chỉ giữ lại những gì thực sự cần thiết
+# LOẠI BỎ requests, openssl để tránh văng trên Samsung
 requirements = python3, kivy==2.3.0, kivymd==1.1.1, pillow, android, pyjnius
 
 orientation = portrait
@@ -15,13 +15,14 @@ android.minapi = 21
 android.ndk = 25b
 android.ndk_api = 21
 
-# Dùng theme mặc định để giảm tải cho Manifest
+# Fix lỗi Manifest từ bản 3.3
 android.apptheme = @android:style/Theme.NoTitleBar
-
-# CHỈ xin quyền Camera
 android.permissions = CAMERA, INTERNET
 
-android.accept_sdk_license = True
+# Bắt buộc cho Samsung mới
 android.archs = arm64-v8a, armeabi-v7a
 android.enable_androidx = True
 android.copy_libs = 1
+
+[buildozer]
+log_level = 2
