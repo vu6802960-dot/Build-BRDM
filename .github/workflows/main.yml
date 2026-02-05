@@ -1,4 +1,4 @@
-name: Build Samsung APK v4.2
+name: Build Samsung APK v4.3
 on:
   push:
     branches: [ main ]
@@ -25,11 +25,16 @@ jobs:
       - name: Install System Dependencies
         run: |
           sudo apt-get update
+          # Cài đặt libunwind-dev trước để tránh lỗi phụ thuộc của gstreamer
+          sudo apt-get install -y libunwind-dev
+          # Cài đặt các thư viện hệ thống cần thiết cho Kivy/Buildozer
           sudo apt-get install -y build-essential git python3-dev libsdl2-dev libsdl2-image-dev \
             libsdl2-mixer-dev libsdl2-ttf-dev libportmidi-dev libswscale-dev libavformat-dev \
             libavcodec-dev zlib1g-dev libgstreamer1.0-dev gstreamer1.0-plugins-base \
             gstreamer1.0-plugins-good libffi-dev libssl-dev autoconf automake libtool \
             pkg-config cmake ant ccache unzip
+          # Lệnh sửa lỗi nếu có gói bị hỏng
+          sudo apt-get install -f
 
       - name: Install Buildozer and Cython
         run: |
@@ -38,7 +43,7 @@ jobs:
 
       - name: Build with Buildozer
         run: |
-          # Chấp nhận tất cả License Android SDK
+          # Chấp nhận License Android SDK
           mkdir -p ~/.android && touch ~/.android/repositories.cfg
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
           
@@ -51,6 +56,6 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Samsung_DeviceManager_v4.2
+          name: Samsung_DeviceManager_v4.3
           path: bin/*.apk
           retention-days: 3
