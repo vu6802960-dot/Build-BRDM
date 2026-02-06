@@ -21,7 +21,7 @@ BoxLayout:
             size: self.size
 
     Label:
-        text: "DEVICE MANAGER PRO v5.5.3"
+        text: "DEVICE MANAGER PRO v5.6"
         color: (0, 0, 0, 1)
         bold: True
         size_hint_y: None
@@ -81,7 +81,7 @@ BoxLayout:
                 id: result_data
                 text: "Sẵn sàng..."
                 color: (0.1, 0.1, 0.1, 1)
-                font_size: '12sp'
+                font_size: '11sp'
                 text_size: self.width - 20, None
                 halign: 'left'
                 valign: 'top'
@@ -103,8 +103,7 @@ class DeviceApp(App):
         self.mode = "MUON"
         self.history_display = ""
         self.history_list = []
-        self.api_key = "K89370347288957"
-        # Tải file âm thanh bạn đã gửi
+        self.api_key = "K89370347288957" # <--- Thay Key của bạn
         self.beep = SoundLoader.load('success.wav') 
         return Builder.load_string(KV)
 
@@ -129,15 +128,22 @@ class DeviceApp(App):
             self.start_camera_full()
         elif self.step == 3:
             if not self.root.ids.user_input.text.strip():
-                self.root.ids.result_data.text = "⚠️ LỖI: CẦN NHẬP TÊN!"
+                self.root.ids.result_data.text = "LỖI: CẦN NHẬP TÊN!"
                 return
             self.scan_with_ocr()
 
     def start_camera_full(self):
         self.root.ids.cam_container.clear_widgets()
-        self.cam = Camera(play=True, index=0, resolution=(640, 480))
+        self.cam = Camera(play=True, index=0, resolution=(1280, 720)) # Tăng độ phân giải để OCR nét hơn
         self.root.ids.cam_container.add_widget(self.cam)
         Clock.schedule_once(self.apply_rotation_full, 1.2)
+        # Fix camera đứng hình: Reset trạng thái play sau mỗi 30s
+        Clock.schedule_interval(self.refresh_camera, 30)
+
+    def refresh_camera(self, dt):
+        if hasattr(self, 'cam'):
+            self.cam.play = False
+            self.cam.play = True
 
     def apply_rotation_full(self, dt):
         try:
@@ -164,34 +170,43 @@ class DeviceApp(App):
             with open(path, 'rb') as f:
                 r = requests.post('https://api.ocr.space/parse/image', 
                                 files={'image': f}, 
-                                data={'apikey': self.api_key, 'OCREngine': 2}, timeout=15)
+                                data={'apikey': self.api_key, 'OCREngine': 2, 'scale': True}, timeout=15)
             result = r.json()
             if result.get('OCRExitCode') == 1:
-                # Phát âm thanh success.wav
                 if self.beep: self.beep.play()
-
-                text = result['ParsedResults'][0]['ParsedText']
-                model_f = re.search(r'SM-[A-Z0-9_]+', text)
-                imei_f = re.search(r'\d{15}', text)
-                sn_f = re.findall(r'[A-Z0-9]{8,10}', text)
+                raw_text = result['ParsedResults'][0]['ParsedText']
+                # Làm sạch text khỏi ký tự lạ
+                clean_text = "".join(ch for ch in raw_text if ch.isprintable() or ch == '\n')
                 
-                m = model_f.group(0) if model_f else "N/A"
-                i = imei_f.group(0) if imei_f else "N/A"
-                s = sn_f[-1] if sn_f else "N/A"
+                # --- LOGIC LỌC DỮ LIỆU TỐI ƯU ---
+                model_match = re.search(r'SM-[A-Z0-9]+', clean_text)
+                imei_match = re.search(r'\b\d{15}\b', clean_text)
+                # SN thường là dòng có chữ và số, không phải IMEI, độ dài 8-11 ký tự
+                sn_candidates = re.findall(r'\b[A-Z0-9]{8,11}\b', clean_text)
+                
+                res_model = model_match.group(0) if model_match else "N/A"
+                res_imei = imei_match.group(0) if imei_match else "N/A"
+                
+                res_sn = "N/A"
+                for cand in sn_candidates:
+                    if cand != res_imei and not cand.startswith("SM-"):
+                        res_sn = cand
+                        break
+                
                 t = datetime.datetime.now().strftime("%H:%M:%S")
                 u = self.root.ids.user_input.text.strip()
                 
-                # HIỂN THỊ MỚI LÊN ĐẦU
-                new_line = f"✅ {t} | {m} | SN:{s}\n"
+                # HIỂN THỊ TRÊN MÀN HÌNH (Đã sửa để hiện IMEI)
+                new_line = f"• {t} | {res_model}\n  IMEI: {res_imei} | SN: {res_sn}\n"
                 self.history_display = new_line + self.history_display
                 self.root.ids.result_data.text = self.history_display
                 
                 full_dt = datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-                self.history_list.append([full_dt, u, self.mode, m, i, s])
+                self.history_list.append([full_dt, u, self.mode, res_model, res_imei, res_sn])
             else:
-                self.root.ids.result_data.text = "Lỗi đọc nhãn!"
+                self.root.ids.result_data.text = "Lỗi đọc nhãn!\n" + self.history_display
         except:
-            self.root.ids.result_data.text = "Lỗi kết nối!"
+            self.root.ids.result_data.text = "Lỗi kết nối!\n" + self.history_display
         self.root.ids.cam_container.opacity = 1
 
     def export_data(self):
@@ -201,9 +216,9 @@ class DeviceApp(App):
 
         if platform == 'android':
             from android.storage import primary_external_storage_path
-            f_path = os.path.join(primary_external_storage_path(), "Documents", "NhatKy_ThietBi_Final.csv")
+            f_path = os.path.join(primary_external_storage_path(), "Documents", "NhatKy_Device_v56.csv")
         else:
-            f_path = "NhatKy_ThietBi_Final.csv"
+            f_path = "NhatKy_Device_v56.csv"
 
         try:
             exists = os.path.isfile(f_path)
@@ -222,4 +237,3 @@ class DeviceApp(App):
 
 if __name__ == '__main__':
     DeviceApp().run()
-
