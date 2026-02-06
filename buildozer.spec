@@ -1,10 +1,10 @@
 [app]
-title = Device Manager 5.7.1
+title = Device Manager 5.7.2
 package.name = samsungdm
 package.domain = org.vudot
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,ttf,wav
-version = 5.7.1
+version = 5.7.2
 
 # THÊM pyjnius để gọi các hàm hệ thống Android (như lấy nét camera)
 requirements = python3, kivy==2.3.0, pillow, android, pyjnius, requests, certifi, charset-normalizer, idna, urllib3, ffpyplayer
@@ -19,3 +19,4 @@ android.archs = arm64-v8a, armeabi-v7a
 android.enable_androidx = True
 android.accept_sdk_license = True
 android.logcat_filters = *:S python:D
+
