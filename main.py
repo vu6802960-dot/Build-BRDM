@@ -5,13 +5,14 @@ from kivy.uix.camera import Camera
 from kivy.utils import platform, get_color_from_hex
 from kivy.clock import Clock
 from kivy.graphics import Rotate, PushMatrix, PopMatrix
+from kivy.core.audio import SoundLoader 
 import os, datetime, requests, re
 
 KV = r'''
 BoxLayout:
     orientation: 'vertical'
-    padding: '12dp'
-    spacing: '10dp'
+    padding: '10dp'
+    spacing: '8dp'
     canvas.before:
         Color:
             rgba: (0.95, 0.95, 0.95, 1)
@@ -20,7 +21,7 @@ BoxLayout:
             size: self.size
 
     Label:
-        text: "DEVICE MANAGER PRO v5.5"
+        text: "DEVICE MANAGER PRO v5.5.3"
         color: (0, 0, 0, 1)
         bold: True
         size_hint_y: None
@@ -39,15 +40,14 @@ BoxLayout:
     BoxLayout:
         orientation: 'vertical'
         size_hint_y: 0.65
-        spacing: '8dp'
+        spacing: '5dp'
         
         TextInput:
             id: user_input
-            hint_text: "Bắt buộc: Nhập tên người mượn/trả..."
+            hint_text: "Nhập tên người thực hiện..."
             size_hint_y: None
             height: '45dp'
             multiline: False
-            padding: [10, 10]
 
         BoxLayout:
             size_hint_y: None
@@ -77,16 +77,14 @@ BoxLayout:
                     radius: [10,]
             padding: '10dp'
             
-            ScrollView:
-                Label:
-                    id: result_data
-                    text: "Sẵn sàng quét..."
-                    color: (0.1, 0.1, 0.1, 1)
-                    font_size: '13sp'
-                    size_hint_y: None
-                    height: self.texture_size[1]
-                    text_size: self.width, None
-                    halign: 'left'
+            Label:
+                id: result_data
+                text: "Sẵn sàng..."
+                color: (0.1, 0.1, 0.1, 1)
+                font_size: '12sp'
+                text_size: self.width - 20, None
+                halign: 'left'
+                valign: 'top'
 
     Button:
         id: main_btn
@@ -103,9 +101,11 @@ class DeviceApp(App):
     def build(self):
         self.step = 1
         self.mode = "MUON"
-        self.history_display = "" 
-        self.history_for_csv = [] # Danh sách lưu tạm để export
-        self.api_key = "YOUR_API_KEY_HERE" 
+        self.history_display = ""
+        self.history_list = []
+        self.api_key = "YOUR_API_KEY_HERE"
+        # Tải file âm thanh bạn đã gửi
+        self.beep = SoundLoader.load('success.wav') 
         return Builder.load_string(KV)
 
     def toggle_mode(self):
@@ -128,8 +128,7 @@ class DeviceApp(App):
         elif self.step == 2:
             self.start_camera_full()
         elif self.step == 3:
-            name = self.root.ids.user_input.text.strip()
-            if not name:
+            if not self.root.ids.user_input.text.strip():
                 self.root.ids.result_data.text = "⚠️ LỖI: CẦN NHẬP TÊN!"
                 return
             self.scan_with_ocr()
@@ -168,57 +167,58 @@ class DeviceApp(App):
                                 data={'apikey': self.api_key, 'OCREngine': 2}, timeout=15)
             result = r.json()
             if result.get('OCRExitCode') == 1:
+                # Phát âm thanh success.wav
+                if self.beep: self.beep.play()
+
                 text = result['ParsedResults'][0]['ParsedText']
+                model_f = re.search(r'SM-[A-Z0-9_]+', text)
+                imei_f = re.search(r'\d{15}', text)
+                sn_f = re.findall(r'[A-Z0-9]{8,10}', text)
                 
-                # --- TRÍCH XUẤT DỮ LIỆU ---
-                model = re.search(r'SM-[A-Z0-9_]+', text)
-                imei = re.search(r'\d{15}', text)
-                # Tìm SN 8 ký tự (thường nằm gần cuối text)
-                sn = re.findall(r'[A-Z0-9]{8}', text)
+                m = model_f.group(0) if model_f else "N/A"
+                i = imei_f.group(0) if imei_f else "N/A"
+                s = sn_f[-1] if sn_f else "N/A"
+                t = datetime.datetime.now().strftime("%H:%M:%S")
+                u = self.root.ids.user_input.text.strip()
                 
-                res_model = model.group(0) if model else "N/A"
-                res_imei = imei.group(0) if imei else "N/A"
-                res_sn = sn[-1] if sn else "N/A"
-                res_time = datetime.datetime.now().strftime("%H:%M:%S %d/%m")
-                res_user = self.root.ids.user_input.text.strip()
-                
-                # Hiển thị cộng dồn
-                entry = f"🕒 {res_time} | {self.mode}\n👤 {res_user}\n📱 {res_model} | IMEI: {res_imei} | SN: {res_sn}\n{'-'*30}\n"
-                self.history_display = entry + self.history_display
+                # HIỂN THỊ MỚI LÊN ĐẦU
+                new_line = f"✅ {t} | {m} | SN:{s}\n"
+                self.history_display = new_line + self.history_display
                 self.root.ids.result_data.text = self.history_display
                 
-                # Lưu vào danh sách chờ export
-                self.history_for_csv.append([res_time, res_user, self.mode, res_model, res_imei, res_sn])
+                full_dt = datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+                self.history_list.append([full_dt, u, self.mode, m, i, s])
             else:
-                self.root.ids.result_data.text = "Lỗi đọc nhãn!\n" + self.history_display
+                self.root.ids.result_data.text = "Lỗi đọc nhãn!"
         except:
-            self.root.ids.result_data.text = "Lỗi kết nối!\n" + self.history_display
+            self.root.ids.result_data.text = "Lỗi kết nối!"
         self.root.ids.cam_container.opacity = 1
 
     def export_data(self):
-        if not self.history_for_csv:
-            self.root.ids.result_data.text = "⚠️ CHƯA CÓ DỮ LIỆU ĐỂ XUẤT!"
+        if not self.history_list:
+            self.root.ids.result_data.text = "⚠️ KHÔNG CÓ DỮ LIỆU!"
             return
 
         if platform == 'android':
             from android.storage import primary_external_storage_path
-            path = os.path.join(primary_external_storage_path(), "Documents", "Log_ThietBi_v5.csv")
+            f_path = os.path.join(primary_external_storage_path(), "Documents", "NhatKy_ThietBi_Final.csv")
         else:
-            path = "Log_ThietBi_v5.csv"
+            f_path = "NhatKy_ThietBi_Final.csv"
 
         try:
-            file_exists = os.path.isfile(path)
-            # Dùng chế độ 'a' (append) để ghi tiếp vào file
-            with open(path, 'a', encoding='utf-8') as f:
-                if not file_exists:
-                    f.write("Thoi Gian,Nguoi Thuc Hien,Che Do,Model,IMEI,SMSN\n")
-                for row in self.history_for_csv:
+            exists = os.path.isfile(f_path)
+            with open(f_path, 'a', encoding='utf-8') as f:
+                if not exists:
+                    f.write("Thoi Gian,Nguoi Dung,Che Do,Model,IMEI,SN\n")
+                for row in self.history_list:
                     f.write(",".join(row) + "\n")
             
-            # Reset giao diện
             self.history_display = ""
-            self.history_for_csv = []
-            self.root.ids.result_data.text = "✅ ĐÃ XUẤT FILE & RESET THÀNH CÔNG!"
+            self.history_list = []
+            self.root.ids.result_data.text = "✅ ĐÃ XUẤT FILE & RESET!"
             self.root.ids.user_input.text = "" 
         except Exception as e:
             self.root.ids.result_data.text = f"Lỗi lưu: {str(e)}"
+
+if __name__ == '__main__':
+    DeviceApp().run()
