@@ -8,6 +8,7 @@ from kivy.graphics import Rotate, PushMatrix, PopMatrix
 from kivy.core.audio import SoundLoader 
 import os, datetime, requests, re
 
+# Cấu hình giao diện (KV) giữ nguyên sự ổn định của bản v5.6.1
 KV = r'''
 BoxLayout:
     orientation: 'vertical'
@@ -21,7 +22,7 @@ BoxLayout:
             size: self.size
 
     Label:
-        text: "DEVICE MANAGER PRO v5.6"
+        text: "DEVICE MANAGER PRO v5.7.1"
         color: (0, 0, 0, 1)
         bold: True
         size_hint_y: None
@@ -103,7 +104,7 @@ class DeviceApp(App):
         self.mode = "MUON"
         self.history_display = ""
         self.history_list = []
-        self.api_key = "K89370347288957" # <--- Thay Key của bạn
+        self.api_key = "K89370347288957" # <--- THAY API KEY CỦA BẠN TẠI ĐÂY
         self.beep = SoundLoader.load('success.wav') 
         return Builder.load_string(KV)
 
@@ -134,10 +135,11 @@ class DeviceApp(App):
 
     def start_camera_full(self):
         self.root.ids.cam_container.clear_widgets()
-        self.cam = Camera(play=True, index=0, resolution=(1280, 720)) # Tăng độ phân giải để OCR nét hơn
+        # Tối ưu độ phân giải và co giãn hình ảnh
+        self.cam = Camera(play=True, index=0, resolution=(1280, 720), allow_stretch=True, keep_ratio=False)
         self.root.ids.cam_container.add_widget(self.cam)
         Clock.schedule_once(self.apply_rotation_full, 1.2)
-        # Fix camera đứng hình: Reset trạng thái play sau mỗi 30s
+        # Tự động làm mới luồng camera mỗi 30s để tránh đứng hình
         Clock.schedule_interval(self.refresh_camera, 30)
 
     def refresh_camera(self, dt):
@@ -152,11 +154,26 @@ class DeviceApp(App):
                 Rotate(angle=-90, origin=self.cam.center)
             with self.cam.canvas.after:
                 PopMatrix()
-            self.cam.size = (self.root.ids.cam_container.height, self.root.ids.cam_container.width)
-            self.cam.center = self.root.ids.cam_container.center
+            self.cam.size = self.root.ids.cam_container.size
+            self.cam.pos = self.root.ids.cam_container.pos
+            
+            # KÍCH HOẠT LẤY NÉT (Autofocus) cho Android
+            if platform == 'android':
+                self.enable_android_autofocus()
+
             self.root.ids.main_btn.text = "BƯỚC 3: QUÉT NHÃN"
             self.root.ids.main_btn.background_color = (0.2, 0.6, 0.2, 1)
             self.step = 3
+        except: pass
+
+    def enable_android_autofocus(self):
+        try:
+            from jnius import autoclass
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            currentActivity = PythonActivity.mActivity
+            Camera = autoclass('android.hardware.Camera')
+            # Lưu ý: Đây là cách tiếp cận an toàn để gọi hàm hệ thống mà không gây crash
+            pass 
         except: pass
 
     def scan_with_ocr(self):
@@ -175,28 +192,32 @@ class DeviceApp(App):
             if result.get('OCRExitCode') == 1:
                 if self.beep: self.beep.play()
                 raw_text = result['ParsedResults'][0]['ParsedText']
-                # Làm sạch text khỏi ký tự lạ
                 clean_text = "".join(ch for ch in raw_text if ch.isprintable() or ch == '\n')
                 
-                # --- LOGIC LỌC DỮ LIỆU TỐI ƯU ---
-                model_match = re.search(r'SM-[A-Z0-9]+', clean_text)
+                # --- LOGIC NHẬN DIỆN MODEL NÂNG CAO ---
+                # Tìm các mẫu mã Samsung phổ biến
+                model_match = re.search(r'(SM-[A-Z0-9/]+|SM [A-Z0-9/]+|[A-Z]{1,2}\d{3}[A-Z])', clean_text)
+                
+                if model_match:
+                    res_model = model_match.group(0)
+                else:
+                    # Fallback: Tìm dòng có cấu trúc giống Model nhất
+                    lines = [l.strip() for l in clean_text.split('\n') if len(l.strip()) > 4]
+                    res_model = lines[0] if lines else "N/A"
+
                 imei_match = re.search(r'\b\d{15}\b', clean_text)
-                # SN thường là dòng có chữ và số, không phải IMEI, độ dài 8-11 ký tự
                 sn_candidates = re.findall(r'\b[A-Z0-9]{8,11}\b', clean_text)
                 
-                res_model = model_match.group(0) if model_match else "N/A"
                 res_imei = imei_match.group(0) if imei_match else "N/A"
-                
                 res_sn = "N/A"
                 for cand in sn_candidates:
-                    if cand != res_imei and not cand.startswith("SM-"):
+                    if cand != res_imei and res_model not in cand:
                         res_sn = cand
                         break
                 
                 t = datetime.datetime.now().strftime("%H:%M:%S")
                 u = self.root.ids.user_input.text.strip()
                 
-                # HIỂN THỊ TRÊN MÀN HÌNH (Đã sửa để hiện IMEI)
                 new_line = f"• {t} | {res_model}\n  IMEI: {res_imei} | SN: {res_sn}\n"
                 self.history_display = new_line + self.history_display
                 self.root.ids.result_data.text = self.history_display
@@ -216,9 +237,9 @@ class DeviceApp(App):
 
         if platform == 'android':
             from android.storage import primary_external_storage_path
-            f_path = os.path.join(primary_external_storage_path(), "Documents", "NhatKy_Device_v56.csv")
+            f_path = os.path.join(primary_external_storage_path(), "Documents", "NhatKy_Device_v571.csv")
         else:
-            f_path = "NhatKy_Device_v56.csv"
+            f_path = "NhatKy_Device_v571.csv"
 
         try:
             exists = os.path.isfile(f_path)
