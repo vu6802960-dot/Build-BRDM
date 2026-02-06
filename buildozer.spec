@@ -1,7 +1,7 @@
 [app]
 
 # (str) Title of your application
-title = Device Pro 5.5.3
+title = Device Pro 5.6
 
 # (str) Package name
 package.name = samsungdm
@@ -57,4 +57,5 @@ android.logcat_filters = *:S python:D
 [buildozer]
 # (int) Log level (2 để xem chi tiết lỗi nếu có)
 log_level = 2
+
 
