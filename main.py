@@ -103,7 +103,7 @@ class DeviceApp(App):
         self.mode = "MUON"
         self.history_display = ""
         self.history_list = []
-        self.api_key = "YOUR_API_KEY_HERE"
+        self.api_key = "K89370347288957"
         # Tải file âm thanh bạn đã gửi
         self.beep = SoundLoader.load('success.wav') 
         return Builder.load_string(KV)
@@ -222,3 +222,4 @@ class DeviceApp(App):
 
 if __name__ == '__main__':
     DeviceApp().run()
+
