@@ -21,37 +21,34 @@ BoxLayout:
             size: self.size
 
     Label:
-        text: "DEVICE MANAGER PRO v4.9.1"
+        text: "DEVICE MANAGER PRO v5.0"
         color: (0, 0, 0, 1)
         bold: True
         size_hint_y: None
         height: '40dp'
 
+    # Vùng Camera chiếm diện tích lớn để dễ quan sát
     BoxLayout:
         id: cam_container
-        size_hint_y: 0.45
+        size_hint_y: 0.55
         canvas.before:
             Color:
                 rgba: (0, 0, 0, 1)
             Rectangle:
                 pos: self.pos
                 size: self.size
-        Label:
-            id: cam_status
-            text: "Chưa có tín hiệu Camera"
-            color: (0.5, 0.5, 0.5, 1)
 
     BoxLayout:
         orientation: 'vertical'
-        size_hint_y: 0.45
+        size_hint_y: 0.35
         spacing: '8dp'
         
         TextInput:
             id: user_input
-            multiline: False
+            hint_text: "Tên người mượn/trả..."
             size_hint_y: None
             height: '45dp'
-            hint_text: "Tên người mượn/trả..."
+            multiline: False
 
         BoxLayout:
             size_hint_y: None
@@ -63,7 +60,6 @@ BoxLayout:
                 on_release: app.toggle_mode()
             Button:
                 text: "XUẤT FILE CSV"
-                background_color: (0.5, 0.5, 0.5, 1)
                 on_release: app.export_data()
 
         Label:
@@ -98,48 +94,41 @@ class DeviceApp(App):
             if platform == 'android':
                 from android.permissions import request_permissions, Permission
                 request_permissions([Permission.CAMERA, Permission.WRITE_EXTERNAL_STORAGE, Permission.READ_EXTERNAL_STORAGE])
-            self.root.ids.main_btn.text = "BƯỚC 2: MỞ CAMERA (NHẤN LẠI NẾU ĐEN)"
-            self.root.ids.main_btn.background_color = (0.2, 0.6, 0.2, 1)
+            self.root.ids.main_btn.text = "BƯỚC 2: KÍCH HOẠT CAMERA"
             self.step = 2
         elif self.step == 2:
-            self.start_camera()
+            self.start_camera_safe()
 
-    def start_camera(self):
+    def start_camera_safe(self):
+        self.root.ids.cam_container.clear_widgets()
+        self.root.ids.result_data.text = "Đang mở ống kính..."
+        
+        # Mở camera ở độ phân giải an toàn, CHƯA XOAY để tránh crash
+        self.cam = Camera(play=True, index=0, resolution=(640, 480))
+        self.root.ids.cam_container.add_widget(self.cam)
+        
+        # Đợi 1.5 giây cho hình ảnh hiện lên ổn định rồi mới ra lệnh xoay
+        Clock.schedule_once(self.apply_rotation, 1.5)
+
+    def apply_rotation(self, dt):
         try:
-            # Xóa widget cũ để giải phóng tài nguyên trước khi mở lại
-            self.root.ids.cam_container.clear_widgets()
-            
-            # TỰ ĐỘNG THÍCH ỨNG: Không ép resolution, để mặc định để Samsung tự chọn
-            self.cam = Camera(play=True, index=0) 
-            
-            # Xoay dọc camera
+            # Thực hiện xoay 90 độ (hoặc -90 tùy máy) để đưa về chiều dọc
             with self.cam.canvas.before:
                 PushMatrix()
+                # Origin đặt tại tâm của camera widget
                 Rotate(angle=-90, origin=self.cam.center)
             with self.cam.canvas.after:
                 PopMatrix()
-                
-            self.root.ids.cam_container.add_widget(self.cam)
-            self.root.ids.result_data.text = "Đang kết nối ống kính... Vui lòng đợi"
             
-            # Buộc hệ thống cập nhật lại luồng sau 1 giây
-            Clock.schedule_once(self.refresh_cam, 1.0)
-            
+            self.root.ids.result_data.text = "Camera đã xoay dọc thành công!"
+            self.root.ids.main_btn.text = "NHẤN ĐỂ QUÉT LẠI (NẾU CẦN)"
         except Exception as e:
-            self.root.ids.result_data.text = f"Lỗi: {str(e)}"
-
-    def refresh_cam(self, dt):
-        if hasattr(self, 'cam'):
-            self.cam.play = False
-            self.cam.play = True
-            self.root.ids.result_data.text = "Camera đã kích hoạt. Nhấn lại nút xanh nếu vẫn đen."
+            self.root.ids.result_data.text = f"Lỗi xoay: {e}"
 
     def export_data(self):
         name = self.root.ids.user_input.text
-        if not name:
-            self.root.ids.result_data.text = "Nhập tên trước khi xuất!"
-            return
-
+        if not name: return
+        
         if platform == 'android':
             from android.storage import primary_external_storage_path
             dir_path = os.path.join(primary_external_storage_path(), "Documents")
@@ -153,7 +142,7 @@ class DeviceApp(App):
         try:
             with open(full_path, 'a', encoding='utf-8') as f:
                 f.write(f"{now},{name},{self.mode}\n")
-            self.root.ids.result_data.text = f"LƯU OK: {now}\nTrong mục Documents"
+            self.root.ids.result_data.text = f"Đã lưu vào Documents/NhatKy_ThietBi.csv"
         except Exception as e:
             self.root.ids.result_data.text = f"Lỗi file: {str(e)}"
 
