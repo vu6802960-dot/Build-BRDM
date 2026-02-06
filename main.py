@@ -2,6 +2,7 @@ import kivy
 from kivy.app import App
 from kivy.lang import Builder
 from kivy.uix.camera import Camera
+from kivy.uix.stencilview import StencilView
 from kivy.utils import platform, get_color_from_hex
 from kivy.clock import Clock
 from kivy.graphics import Rotate, PushMatrix, PopMatrix
@@ -21,22 +22,26 @@ BoxLayout:
             size: self.size
 
     Label:
-        text: "DEVICE MANAGER PRO v5.7.2"
+        text: "DEVICE MANAGER PRO v5.8"
         color: (0, 0, 0, 1)
         bold: True
         size_hint_y: None
         height: '35dp'
 
-    # SỬA ĐỔI TẠI ĐÂY: Dùng RelativeLayout để khóa vùng hiển thị
-    RelativeLayout:
-        id: cam_container
+    # Dùng StencilView để CẮT BỎ phần camera tràn ra ngoài
+    StencilView:
+        id: cam_stencil
         size_hint_y: 0.35
         canvas.before:
             Color:
                 rgba: (0, 0, 0, 1)
             Rectangle:
-                pos: (0, 0)
+                pos: self.pos
                 size: self.size
+        BoxLayout:
+            id: cam_container
+            size: self.parent.size
+            pos: self.parent.pos
 
     BoxLayout:
         orientation: 'vertical'
@@ -105,7 +110,7 @@ class DeviceApp(App):
         self.history_display = ""
         self.history_list = []
         self.api_key = "K89370347288957" 
-        self.beep = SoundLoader.load('success.wav') #
+        self.beep = SoundLoader.load('success.wav') 
         return Builder.load_string(KV)
 
     def toggle_mode(self):
@@ -120,75 +125,66 @@ class DeviceApp(App):
 
     def start_camera_full(self):
         self.root.ids.cam_container.clear_widgets()
-        # Ép camera không được tự ý co giãn ngoài tầm kiểm soát
-        self.cam = Camera(play=True, index=0, resolution=(1280, 720), allow_stretch=True, keep_ratio=False)
+        # Dùng resolution cao nhất để tránh nhầm chữ R/P
+        self.cam = Camera(play=True, index=0, resolution=(1920, 1080), allow_stretch=True, keep_ratio=True)
         self.root.ids.cam_container.add_widget(self.cam)
-        Clock.schedule_once(self.apply_rotation_full, 1.2)
-        # Chạy vòng lặp sửa kích thước trong 5 giây đầu để đảm bảo không bị tràn
-        self.fix_count = 0
-        Clock.schedule_interval(self.force_size_fix, 0.5)
-
-    def force_size_fix(self, dt):
-        if hasattr(self, 'cam'):
-            self.cam.size = self.root.ids.cam_container.size
-            self.cam.pos = (0, 0)
-        self.fix_count += 1
-        if self.fix_count > 10: return False # Dừng sau 5 giây
+        Clock.schedule_once(self.apply_rotation_full, 1.0)
 
     def apply_rotation_full(self, dt):
         try:
             with self.cam.canvas.before:
                 PushMatrix()
-                Rotate(angle=-90, origin=(self.cam.center_x, self.cam.center_y))
+                Rotate(angle=-90, origin=self.cam.center)
             with self.cam.canvas.after:
                 PopMatrix()
-            
-            # Khóa chặt vị trí camera vào trong RelativeLayout (pos 0,0 là góc trái dưới của container)
-            self.cam.size = self.root.ids.cam_container.size
-            self.cam.pos = (0, 0)
-
+            # Cưỡng bức kích thước camera theo khung Stencil
+            self.cam.size = self.root.ids.cam_stencil.size
+            self.cam.pos = self.root.ids.cam_stencil.pos
             self.root.ids.main_btn.text = "BƯỚC 3: QUÉT NHÃN"
             self.root.ids.main_btn.background_color = (0.2, 0.6, 0.2, 1)
             self.step = 3
         except: pass
 
-    # ... (Các hàm khác như process_ocr, handle_logic, export_data giữ nguyên từ v5.7.1) ...
     def scan_with_ocr(self):
         temp_path = os.path.join(self.user_data_dir, "temp.jpg")
         self.cam.export_to_png(temp_path)
-        self.root.ids.cam_container.opacity = 0.5
+        # Hiệu ứng chờ
+        self.root.ids.cam_stencil.opacity = 0.5
         Clock.schedule_once(lambda dt: self.process_ocr(temp_path), 0.2)
 
     def process_ocr(self, path):
         try:
             with open(path, 'rb') as f:
-                r = requests.post('https://api.ocr.space/parse/image', 
-                                files={'image': f}, 
-                                data={'apikey': self.api_key, 'OCREngine': 2, 'scale': True}, timeout=15)
+                # scale=True và detectOrientation=True giúp OCR đọc chính xác R/P
+                payload = {
+                    'apikey': self.api_key,
+                    'OCREngine': 2,
+                    'scale': True,
+                    'isOverlayRequired': False,
+                    'detectOrientation': True
+                }
+                r = requests.post('https://api.ocr.space/parse/image', files={'image': f}, data=payload, timeout=15)
+            
             result = r.json()
             if result.get('OCRExitCode') == 1:
-                if self.beep: self.beep.play() #
+                if self.beep: self.beep.play()
                 raw_text = result['ParsedResults'][0]['ParsedText']
-                clean_text = "".join(ch for ch in raw_text if ch.isprintable() or ch == '\n') #
                 
-                model_match = re.search(r'(SM-[A-Z0-9/]+|SM [A-Z0-9/]+|[A-Z]{1,2}\d{3}[A-Z])', clean_text)
-                if model_match: res_model = model_match.group(0)
-                else:
-                    lines = [l.strip() for l in clean_text.split('\n') if len(l.strip()) > 4]
-                    res_model = lines[0] if lines else "N/A"
+                # Làm sạch dữ liệu và chuẩn hóa chữ R/P
+                clean_text = raw_text.replace(' ', '').upper()
+                
+                # Logic lọc Model đặc biệt cho Samsung
+                model_match = re.search(r'SM-[A-Z0-9]+', clean_text)
+                imei_match = re.search(r'\d{15}', clean_text)
+                sn_match = re.search(r'S/N:?([A-Z0-9]{11})', clean_text) or re.search(r'\b[A-Z0-9]{11}\b', clean_text)
 
-                imei_match = re.search(r'\b\d{15}\b', clean_text) #
-                sn_candidates = re.findall(r'\b[A-Z0-9]{8,11}\b', clean_text) #
-                
+                res_model = model_match.group(0) if model_match else "N/A"
                 res_imei = imei_match.group(0) if imei_match else "N/A"
-                res_sn = "N/A"
-                for cand in sn_candidates:
-                    if cand != res_imei and res_model not in cand:
-                        res_sn = cand
-                        break
-                
+                res_sn = sn_match.group(1) if hasattr(sn_match, 'group') and len(sn_match.groups()) > 0 else (sn_match.group(0) if sn_match else "N/A")
+
                 t = datetime.datetime.now().strftime("%H:%M:%S")
                 u = self.root.ids.user_input.text.strip()
+                
                 new_line = f"• {t} | {res_model}\n  IMEI: {res_imei} | SN: {res_sn}\n"
                 self.history_display = new_line + self.history_display
                 self.root.ids.result_data.text = self.history_display
@@ -196,10 +192,11 @@ class DeviceApp(App):
                 full_dt = datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
                 self.history_list.append([full_dt, u, self.mode, res_model, res_imei, res_sn])
             else:
-                self.root.ids.result_data.text = "Lỗi đọc nhãn!\n" + self.history_display
-        except:
-            self.root.ids.result_data.text = "Lỗi kết nối!\n" + self.history_display
-        self.root.ids.cam_container.opacity = 1
+                self.root.ids.result_data.text = "Không đọc được nhãn!"
+        except Exception as e:
+            self.root.ids.result_data.text = f"Lỗi kết nối API!"
+        
+        self.root.ids.cam_stencil.opacity = 1
 
     def handle_logic(self):
         if self.step == 1:
@@ -212,7 +209,7 @@ class DeviceApp(App):
             self.start_camera_full()
         elif self.step == 3:
             if not self.root.ids.user_input.text.strip():
-                self.root.ids.result_data.text = "LỖI: CẦN NHẬP TÊN!"
+                self.root.ids.result_data.text = "NHẬP TÊN TRƯỚC!"
                 return
             self.scan_with_ocr()
 
@@ -222,16 +219,16 @@ class DeviceApp(App):
             return
         if platform == 'android':
             from android.storage import primary_external_storage_path
-            f_path = os.path.join(primary_external_storage_path(), "Documents", "NhatKy_Device_v572.csv")
-        else: f_path = "NhatKy_Device_v572.csv"
+            f_path = os.path.join(primary_external_storage_path(), "Documents", "NhatKy_v58.csv")
+        else: f_path = "NhatKy_v58.csv"
         try:
             exists = os.path.isfile(f_path)
             with open(f_path, 'a', encoding='utf-8') as f:
                 if not exists: f.write("Thoi Gian,Nguoi Dung,Che Do,Model,IMEI,SN\n")
                 for row in self.history_list: f.write(",".join(row) + "\n")
             self.history_display = ""; self.history_list = []
-            self.root.ids.result_data.text = "✅ ĐÃ XUẤT FILE & RESET!"; self.root.ids.user_input.text = "" 
-        except Exception as e: self.root.ids.result_data.text = f"Lỗi lưu: {str(e)}"
+            self.root.ids.result_data.text = "✅ ĐÃ XUẤT FILE!"; self.root.ids.user_input.text = "" 
+        except: self.root.ids.result_data.text = "Lỗi lưu file!"
 
 if __name__ == '__main__':
     DeviceApp().run()
