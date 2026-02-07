@@ -22,13 +22,12 @@ BoxLayout:
             size: self.size
 
     Label:
-        text: "DEVICE MANAGER PRO v5.8"
+        text: "DEVICE MANAGER PRO v6.4"
         color: (0, 0, 0, 1)
         bold: True
         size_hint_y: None
         height: '35dp'
 
-    # Dùng StencilView để CẮT BỎ phần camera tràn ra ngoài
     StencilView:
         id: cam_stencil
         size_hint_y: 0.35
@@ -109,7 +108,7 @@ class DeviceApp(App):
         self.mode = "MUON"
         self.history_display = ""
         self.history_list = []
-        self.api_key = "K89370347288957" 
+        self.api_key = "K89370347288957" # <--- Thay Key của bạn vào đây
         self.beep = SoundLoader.load('success.wav') 
         return Builder.load_string(KV)
 
@@ -125,7 +124,6 @@ class DeviceApp(App):
 
     def start_camera_full(self):
         self.root.ids.cam_container.clear_widgets()
-        # Dùng resolution cao nhất để tránh nhầm chữ R/P
         self.cam = Camera(play=True, index=0, resolution=(1920, 1080), allow_stretch=True, keep_ratio=True)
         self.root.ids.cam_container.add_widget(self.cam)
         Clock.schedule_once(self.apply_rotation_full, 1.0)
@@ -137,7 +135,6 @@ class DeviceApp(App):
                 Rotate(angle=-90, origin=self.cam.center)
             with self.cam.canvas.after:
                 PopMatrix()
-            # Cưỡng bức kích thước camera theo khung Stencil
             self.cam.size = self.root.ids.cam_stencil.size
             self.cam.pos = self.root.ids.cam_stencil.pos
             self.root.ids.main_btn.text = "BƯỚC 3: QUÉT NHÃN"
@@ -146,37 +143,41 @@ class DeviceApp(App):
         except: pass
 
     def scan_with_ocr(self):
+        # KHẮC PHỤC LỖI TREO: Reset camera mỗi khi quét
+        self.cam.play = False
+        self.cam.play = True
+        
+        # Đợi 0.15s để cảm biến thích nghi ánh sáng mới
+        Clock.schedule_once(self._capture_and_send, 0.15)
+
+    def _capture_and_send(self, dt):
         temp_path = os.path.join(self.user_data_dir, "temp.jpg")
         self.cam.export_to_png(temp_path)
-        # Hiệu ứng chờ
         self.root.ids.cam_stencil.opacity = 0.5
-        Clock.schedule_once(lambda dt: self.process_ocr(temp_path), 0.2)
+        Clock.schedule_once(lambda dt: self.process_ocr(temp_path), 0.05)
 
     def process_ocr(self, path):
         try:
             with open(path, 'rb') as f:
-                # scale=True và detectOrientation=True giúp OCR đọc chính xác R/P
+                # Dùng Engine 2 để chống lóa và sai chữ B/8, R/P
                 payload = {
                     'apikey': self.api_key,
                     'OCREngine': 2,
                     'scale': True,
-                    'isOverlayRequired': False,
-                    'detectOrientation': True
+                    'detectOrientation': True, # Cho phép bạn cầm máy mọi hướng
+                    'language': 'eng'
                 }
-                r = requests.post('https://api.ocr.space/parse/image', files={'image': f}, data=payload, timeout=15)
+                r = requests.post('https://api.ocr.space/parse/image', files={'image': f}, data=payload, timeout=12)
             
             result = r.json()
             if result.get('OCRExitCode') == 1:
                 if self.beep: self.beep.play()
-                raw_text = result['ParsedResults'][0]['ParsedText']
+                raw_text = result['ParsedResults'][0]['ParsedText'].upper()
                 
-                # Làm sạch dữ liệu và chuẩn hóa chữ R/P
-                clean_text = raw_text.replace(' ', '').upper()
-                
-                # Logic lọc Model đặc biệt cho Samsung
-                model_match = re.search(r'SM-[A-Z0-9]+', clean_text)
-                imei_match = re.search(r'\d{15}', clean_text)
-                sn_match = re.search(r'S/N:?([A-Z0-9]{11})', clean_text) or re.search(r'\b[A-Z0-9]{11}\b', clean_text)
+                # Trích xuất dữ liệu trung thực
+                model_match = re.search(r'SM-[A-Z0-9]+', raw_text)
+                imei_match = re.search(r'\d{15}', raw_text)
+                sn_match = re.search(r'S/N:?\s*([A-Z0-9]{11})', raw_text) or re.search(r'\b[A-Z0-9]{11}\b', raw_text)
 
                 res_model = model_match.group(0) if model_match else "N/A"
                 res_imei = imei_match.group(0) if imei_match else "N/A"
@@ -184,7 +185,6 @@ class DeviceApp(App):
 
                 t = datetime.datetime.now().strftime("%H:%M:%S")
                 u = self.root.ids.user_input.text.strip()
-                
                 new_line = f"• {t} | {res_model}\n  IMEI: {res_imei} | SN: {res_sn}\n"
                 self.history_display = new_line + self.history_display
                 self.root.ids.result_data.text = self.history_display
@@ -192,10 +192,9 @@ class DeviceApp(App):
                 full_dt = datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
                 self.history_list.append([full_dt, u, self.mode, res_model, res_imei, res_sn])
             else:
-                self.root.ids.result_data.text = "Không đọc được nhãn!"
-        except Exception as e:
-            self.root.ids.result_data.text = f"Lỗi kết nối API!"
-        
+                self.root.ids.result_data.text = "Lỗi đọc nhãn! Thử lại."
+        except:
+            self.root.ids.result_data.text = "Lỗi mạng hoặc API!"
         self.root.ids.cam_stencil.opacity = 1
 
     def handle_logic(self):
@@ -209,7 +208,7 @@ class DeviceApp(App):
             self.start_camera_full()
         elif self.step == 3:
             if not self.root.ids.user_input.text.strip():
-                self.root.ids.result_data.text = "NHẬP TÊN TRƯỚC!"
+                self.root.ids.result_data.text = "HÃY NHẬP TÊN NGƯỜI QUÉT!"
                 return
             self.scan_with_ocr()
 
@@ -219,8 +218,8 @@ class DeviceApp(App):
             return
         if platform == 'android':
             from android.storage import primary_external_storage_path
-            f_path = os.path.join(primary_external_storage_path(), "Documents", "NhatKy_v58.csv")
-        else: f_path = "NhatKy_v58.csv"
+            f_path = os.path.join(primary_external_storage_path(), "Documents", "NhatKy_v64.csv")
+        else: f_path = "NhatKy_v64.csv"
         try:
             exists = os.path.isfile(f_path)
             with open(f_path, 'a', encoding='utf-8') as f:
@@ -228,7 +227,7 @@ class DeviceApp(App):
                 for row in self.history_list: f.write(",".join(row) + "\n")
             self.history_display = ""; self.history_list = []
             self.root.ids.result_data.text = "✅ ĐÃ XUẤT FILE!"; self.root.ids.user_input.text = "" 
-        except: self.root.ids.result_data.text = "Lỗi lưu file!"
+        except: self.root.ids.result_data.text = "Lỗi lưu file CSV!"
 
 if __name__ == '__main__':
     DeviceApp().run()
