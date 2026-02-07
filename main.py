@@ -22,7 +22,7 @@ BoxLayout:
             size: self.size
 
     Label:
-        text: "DEVICE MANAGER PRO v6.4"
+        text: "DEVICE MANAGER PRO v7.0"
         color: (0, 0, 0, 1)
         bold: True
         size_hint_y: None
@@ -84,7 +84,7 @@ BoxLayout:
             
             Label:
                 id: result_data
-                text: "Sẵn sàng..."
+                text: "Sẵn sàng quét..."
                 color: (0.1, 0.1, 0.1, 1)
                 font_size: '11sp'
                 text_size: self.width - 20, None
@@ -108,8 +108,9 @@ class DeviceApp(App):
         self.mode = "MUON"
         self.history_display = ""
         self.history_list = []
-        self.api_key = "K89370347288957" # <--- Thay Key của bạn vào đây
-        self.beep = SoundLoader.load('success.wav') 
+        self.api_key = "K89370347288957" # Thay key của bạn
+        self.beep_ok = SoundLoader.load('success.wav') 
+        self.beep_error = SoundLoader.load('error.wav') # Tích hợp file âm thanh bạn gửi
         return Builder.load_string(KV)
 
     def toggle_mode(self):
@@ -143,58 +144,75 @@ class DeviceApp(App):
         except: pass
 
     def scan_with_ocr(self):
-        # KHẮC PHỤC LỖI TREO: Reset camera mỗi khi quét
+        # Reset camera để tránh lưu ảnh cũ
         self.cam.play = False
         self.cam.play = True
-        
-        # Đợi 0.15s để cảm biến thích nghi ánh sáng mới
-        Clock.schedule_once(self._capture_and_send, 0.15)
-
-    def _capture_and_send(self, dt):
         temp_path = os.path.join(self.user_data_dir, "temp.jpg")
-        self.cam.export_to_png(temp_path)
-        self.root.ids.cam_stencil.opacity = 0.5
-        Clock.schedule_once(lambda dt: self.process_ocr(temp_path), 0.05)
+        # Đợi camera ổn định ánh sáng ở khoảng cách 25cm
+        Clock.schedule_once(lambda dt: self._capture_logic(temp_path), 0.2)
 
-    def process_ocr(self, path):
+    def _capture_logic(self, path):
+        self.cam.export_to_png(path)
+        self.root.ids.cam_stencil.opacity = 0.5
+        self.process_ocr_v7(path)
+
+    def process_ocr_v7(self, path):
         try:
             with open(path, 'rb') as f:
-                # Dùng Engine 2 để chống lóa và sai chữ B/8, R/P
                 payload = {
                     'apikey': self.api_key,
                     'OCREngine': 2,
                     'scale': True,
-                    'detectOrientation': True, # Cho phép bạn cầm máy mọi hướng
+                    'detectOrientation': True,
                     'language': 'eng'
                 }
-                r = requests.post('https://api.ocr.space/parse/image', files={'image': f}, data=payload, timeout=12)
+                r = requests.post('https://api.ocr.space/parse/image', files={'image': f}, data=payload, timeout=15)
             
             result = r.json()
             if result.get('OCRExitCode') == 1:
-                if self.beep: self.beep.play()
                 raw_text = result['ParsedResults'][0]['ParsedText'].upper()
                 
-                # Trích xuất dữ liệu trung thực
+                # --- TRÍCH XUẤT DỮ LIỆU ---
                 model_match = re.search(r'SM-[A-Z0-9]+', raw_text)
                 imei_match = re.search(r'\d{15}', raw_text)
                 sn_match = re.search(r'S/N:?\s*([A-Z0-9]{11})', raw_text) or re.search(r'\b[A-Z0-9]{11}\b', raw_text)
 
-                res_model = model_match.group(0) if model_match else "N/A"
-                res_imei = imei_match.group(0) if imei_match else "N/A"
-                res_sn = sn_match.group(1) if hasattr(sn_match, 'group') and len(sn_match.groups()) > 0 else (sn_match.group(0) if sn_match else "N/A")
+                res_model = model_match.group(0) if model_match else None
+                res_imei = imei_match.group(0) if imei_match else None
+                res_sn = sn_match.group(1) if (sn_match and hasattr(sn_match, 'group') and len(sn_match.groups()) > 0) else (sn_match.group(0) if sn_match else None)
 
-                t = datetime.datetime.now().strftime("%H:%M:%S")
-                u = self.root.ids.user_input.text.strip()
-                new_line = f"• {t} | {res_model}\n  IMEI: {res_imei} | SN: {res_sn}\n"
-                self.history_display = new_line + self.history_display
-                self.root.ids.result_data.text = self.history_display
-                
-                full_dt = datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-                self.history_list.append([full_dt, u, self.mode, res_model, res_imei, res_sn])
+                # --- RÀNG BUỘC HIỂN THỊ CHẶT CHẼ ---
+                # Chỉ hiển thị nếu có Model VÀ (có IMEI HOẶC có SN)
+                if res_model and (res_imei or res_sn):
+                    if self.beep_ok: self.beep_ok.play()
+                    t = datetime.datetime.now().strftime("%H:%M:%S")
+                    u = self.root.ids.user_input.text.strip()
+                    
+                    final_imei = res_imei if res_imei else "N/A"
+                    final_sn = res_sn if res_sn else "N/A"
+                    
+                    new_line = f"• {t} | {res_model}\n  IMEI: {final_imei} | SN: {final_sn}\n"
+                    self.history_display = new_line + self.history_display
+                    self.root.ids.result_data.text = self.history_display
+                    
+                    full_dt = datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+                    self.history_list.append([full_dt, u, self.mode, res_model, final_imei, final_sn])
+                else:
+                    # Phát âm thanh báo lỗi khi thiếu thông tin
+                    if self.beep_error: self.beep_error.play()
+                    
+                    msg = "❌ QUÉT THẤT BẠI: THÔNG TIN CHƯA ĐỦ!\n"
+                    if not res_model: msg += "- Thiếu Model (SM-...)\n"
+                    if not (res_imei or res_sn): msg += "- Thiếu IMEI/SN\n"
+                    msg += "Gợi ý: Nghiêng máy tránh lóa đèn văn phòng."
+                    self.root.ids.result_data.text = msg + "\n---\n" + self.history_display
             else:
-                self.root.ids.result_data.text = "Lỗi đọc nhãn! Thử lại."
+                if self.beep_error: self.beep_error.play()
+                self.root.ids.result_data.text = "⚠️ LỖI PHẢN HỒI OCR! THỬ LẠI."
         except:
-            self.root.ids.result_data.text = "Lỗi mạng hoặc API!"
+            if self.beep_error: self.beep_error.play()
+            self.root.ids.result_data.text = "⚠️ LỖI MẠNG! KIỂM TRA WIFI/4G."
+        
         self.root.ids.cam_stencil.opacity = 1
 
     def handle_logic(self):
@@ -208,26 +226,27 @@ class DeviceApp(App):
             self.start_camera_full()
         elif self.step == 3:
             if not self.root.ids.user_input.text.strip():
-                self.root.ids.result_data.text = "HÃY NHẬP TÊN NGƯỜI QUÉT!"
+                if self.beep_error: self.beep_error.play()
+                self.root.ids.result_data.text = "LỖI: CHƯA NHẬP TÊN!"
                 return
             self.scan_with_ocr()
 
     def export_data(self):
         if not self.history_list:
-            self.root.ids.result_data.text = "⚠️ KHÔNG CÓ DỮ LIỆU!"
+            self.root.ids.result_data.text = "⚠️ KHÔNG CÓ DỮ LIỆU ĐỂ XUẤT!"
             return
         if platform == 'android':
             from android.storage import primary_external_storage_path
-            f_path = os.path.join(primary_external_storage_path(), "Documents", "NhatKy_v64.csv")
-        else: f_path = "NhatKy_v64.csv"
+            f_path = os.path.join(primary_external_storage_path(), "Documents", "NhatKy_v70.csv")
+        else: f_path = "NhatKy_v70.csv"
         try:
             exists = os.path.isfile(f_path)
             with open(f_path, 'a', encoding='utf-8') as f:
                 if not exists: f.write("Thoi Gian,Nguoi Dung,Che Do,Model,IMEI,SN\n")
                 for row in self.history_list: f.write(",".join(row) + "\n")
             self.history_display = ""; self.history_list = []
-            self.root.ids.result_data.text = "✅ ĐÃ XUẤT FILE!"; self.root.ids.user_input.text = "" 
-        except: self.root.ids.result_data.text = "Lỗi lưu file CSV!"
+            self.root.ids.result_data.text = "✅ ĐÃ LƯU FILE CSV THÀNH CÔNG!"; self.root.ids.user_input.text = "" 
+        except: self.root.ids.result_data.text = "LỖI KHI LƯU FILE!"
 
 if __name__ == '__main__':
     DeviceApp().run()
