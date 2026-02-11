@@ -20,16 +20,20 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          # Cài đặt bổ sung libtool, autoconf, automake để fix lỗi LT_SYS_SYMBOL_USCORE
+          # Cài đặt đầy đủ các gói hỗ trợ build và nén/giải nén
           sudo apt-get install -y build-essential libffi-dev libssl-dev libzbar0 python3-dev \
-          autoconf automake libtool pkg-config
+          autoconf automake libtool pkg-config zlib1g-dev ccache cmake
+          # Cài đặt Cython đúng phiên bản cho Kivy 2.2.1
+          pip install --upgrade pip
           pip install buildozer cython==0.29.33
 
       - name: Build APK
         run: |
-          # Chạy buildozer với log level 2 để dễ debug nếu có lỗi khác
-          buildozer -v android debug
+          # Chấp nhận tất cả license của Android SDK trước khi build
+          yes | buildozer -v android debug
         env:
+          # Đảm bảo dùng đúng Java 17 (ổn định nhất cho Android API 33)
+          JAVA_HOME: ${{ env.JAVA_HOME_17_X64 }}
           ACCEPT_SDK_LICENSE: "yes"
 
       - name: Upload Artifact
