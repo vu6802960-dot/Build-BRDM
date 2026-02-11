@@ -1,166 +1,298 @@
-import os
-from datetime import datetime
-
-# Kivy imports
+import kivy
 from kivy.app import App
-from kivy.uix.boxlayout import BoxLayout
+from kivy.lang import Builder
+from kivy.uix.screenmanager import ScreenManager, Screen
+from kivy.properties import ListProperty, StringProperty
 from kivy.uix.label import Label
-from kivy.uix.camera import Camera
-from kivy.uix.popup import Popup
-from kivy.uix.button import Button
-from kivy.utils import platform
 from kivy.clock import Clock
+from kivy.core.audio import SoundLoader
+import os, datetime, csv
 
-# Local imports (Đảm bảo các file này nằm cùng thư mục)
-from scan_processor import MLKitScanner
-from utils import save_to_csv
+KV = r'''
+<DataRow@BoxLayout>:
+    stt: ''; model: ''; imei: ''; status: ''; audit: ''; is_header: False
+    size_hint_y: None
+    height: '45dp'
+    canvas.before:
+        Color:
+            rgba: (0.2, 0.2, 0.2, 1) if self.is_header else ((0.9, 1, 0.9, 1) if self.status == 'Kho' else (1, 0.9, 0.9, 1))
+        Rectangle:
+            pos: self.pos
+            size: self.size
+    Label:
+        text: root.stt
+        size_hint_x: 0.1
+        bold: root.is_header
+        color: (1,1,1,1) if root.is_header else (0,0,0,1)
+    Label:
+        text: root.model
+        size_hint_x: 0.25
+        bold: root.is_header
+        color: (1,1,1,1) if root.is_header else (0,0,0,1)
+    Label:
+        text: root.imei
+        size_hint_x: 0.3
+        bold: root.is_header
+        color: (1,1,1,1) if root.is_header else (0,0,0,1)
+    Label:
+        text: root.status
+        size_hint_x: 0.15
+        bold: root.is_header
+        color: (1,1,1,1) if root.is_header else ((0, 0.6, 0, 1) if root.status == 'Kho' else (0.8, 0, 0, 1))
+    Label:
+        text: root.audit
+        size_hint_x: 0.2
+        bold: root.is_header
+        font_size: '9sp'
+        color: (1,1,1,1) if root.is_header else (0,0,0,1)
 
-class MainScreen(BoxLayout):
-    """Lớp giao diện chính định nghĩa trong brdmtracker.kv"""
-    pass
+<ModelStatusRow@ButtonBehavior+BoxLayout>:
+    model_name: ''; status_text: ''; is_full: True
+    size_hint_y: None
+    height: '50dp'
+    padding: '10dp'
+    canvas.before:
+        Color:
+            rgba: (0.1, 0.8, 0.1, 0.2) if self.is_full else (1, 1, 1, 1)
+        Rectangle:
+            pos: self.pos
+            size: self.size
+        Color:
+            rgba: (0.8, 0.8, 0.8, 1)
+        Line:
+            points: self.x, self.y, self.x + self.width, self.y
+    Label:
+        text: root.model_name
+        color: (0,0,0,1)
+        halign: 'left'
+        text_size: self.size
+    Label:
+        text: root.status_text
+        color: (0, 0.5, 0, 1) if root.is_full else (0.8, 0, 0, 1)
+        size_hint_x: 0.3
+        bold: True
 
-class BRDMTrackerPro(App):
+ScreenManager:
+    MainScreen:
+    StatusScreen:
+    ScanScreen:
+
+<MainScreen>:
+    name: 'main'
+    BoxLayout:
+        orientation: 'vertical'
+        padding: '10dp'
+        spacing: '5dp'
+        Label:
+            text: app.user_info
+            size_hint_y: None
+            height: '40dp'
+            bold: True
+            color: (0,0,0,1)
+        BoxLayout:
+            size_hint_y: None
+            height: '45dp'
+            spacing: '5dp'
+            Button:
+                text: 'IMPORT'
+                on_release: app.import_data()
+            Button:
+                text: 'STATUS'
+                on_release: root.manager.current = 'status'
+            Button:
+                text: 'CAMERA SCAN'
+                on_release: root.manager.current = 'scan'
+            Button:
+                text: 'EXPORT'
+                on_release: app.export_data()
+        TextInput:
+            id: search_input
+            hint_text: 'Search IMEI...'
+            size_hint_y: None
+            height: '40dp'
+            on_text: app.search_imei(self.text)
+        DataRow:
+            stt: 'STT'; model: 'Model'; imei: 'IMEI/SN'; status: 'Status'; audit: 'Last Audit'; is_header: True
+        ScrollView:
+            BoxLayout:
+                id: main_table
+                orientation: 'vertical'
+                size_hint_y: None
+                height: self.minimum_height
+
+<StatusScreen>:
+    name: 'status'
+    BoxLayout:
+        orientation: 'vertical'
+        padding: '10dp'
+        Label:
+            text: "TRẠNG THÁI TỔNG HỢP MODEL"
+            size_hint_y: None
+            height: '40dp'
+            bold: True
+            color: (0,0,0,1)
+        ScrollView:
+            BoxLayout:
+                id: status_container
+                orientation: 'vertical'
+                size_hint_y: None
+                height: self.minimum_height
+        Button:
+            text: 'QUAY LẠI'
+            size_hint_y: None
+            height: '45dp'
+            on_release: root.manager.current = 'main'
+
+<ScanScreen>:
+    name: 'scan'
+    on_enter: app.start_continuous_scan()
+    on_leave: app.stop_continuous_scan()
+    BoxLayout:
+        orientation: 'vertical'
+        padding: '10dp'
+        spacing: '5dp'
+        BoxLayout:
+            id: camera_preview
+            size_hint_y: 0.4
+            canvas.before:
+                Color:
+                    rgba: (0,0,0,1)
+                Rectangle:
+                    pos: self.pos
+                    size: self.size
+        BoxLayout:
+            size_hint_y: None
+            height: '40dp'
+            spacing: '5dp'
+            TextInput:
+                id: scan_user
+                hint_text: 'Tên người thực hiện...'
+            Spinner:
+                id: scan_mode
+                text: 'Kho'
+                values: ('Kho', 'Mượn')
+                size_hint_x: 0.3
+        DataRow:
+            stt: 'STT'; model: 'Model'; imei: 'IMEI/SN'; status: 'Status'; audit: 'Last Audit'; is_header: True
+        ScrollView:
+            BoxLayout:
+                id: scan_table
+                orientation: 'vertical'
+                size_hint_y: None
+                height: self.minimum_height
+        Button:
+            text: 'ĐÓNG CAMERA'
+            size_hint_y: None
+            height: '45dp'
+            on_release: root.manager.current = 'main'
+'''
+
+class DeviceApp(App):
+    user_info = StringProperty("ID: --- | Name: ---")
+    all_devices = ListProperty([])
+    filtered_devices = ListProperty([])
+
     def build(self):
-        # Khởi tạo kho lưu trữ dữ liệu tạm thời
-        self.data_records = []
-        self.scanner = MLKitScanner()
-        self.root_ui = MainScreen()
-        return self.root_ui
+        self.beep_ok = SoundLoader.load('success.wav')
+        self.beep_error = SoundLoader.load('error.wav')
+        return Builder.load_string(KV)
 
-    def on_start(self):
-        """Chạy khi ứng dụng bắt đầu: Xin quyền và Khóa hướng màn hình"""
-        if platform == 'android':
-            from android.permissions import request_permissions, Permission
-            request_permissions([
-                Permission.CAMERA, 
-                Permission.WRITE_EXTERNAL_STORAGE,
-                Permission.READ_EXTERNAL_STORAGE
-            ])
-            
-            # Khóa màn hình dọc để tránh lỗi xoay đen màn hình
-            from plyer import orientation
-            try:
-                orientation.set_portrait()
-            except Exception as e:
-                print(f"Orientation Error: {e}")
-
-    def start_scan(self):
-        """Kích hoạt Camera Popup"""
-        person = self.root_ui.ids.user_input.text.strip()
-        if not person:
-            self.show_popup("Thông báo", "Vui lòng nhập tên người thực hiện trước khi quét!")
-            return
-        
-        # Sử dụng Clock để tạo độ trễ nhỏ, giúp UI mượt mà hơn khi mở phần cứng Camera
-        Clock.schedule_once(self._open_camera_popup, 0.1)
-
-    def _open_camera_popup(self, dt):
-        content = BoxLayout(orientation='vertical', spacing=10, padding=10)
-        
-        # Thiết lập camera với độ phân giải tối ưu cho OCR
-        self.cam = Camera(play=True, resolution=(640, 480))
-        
-        btn_layout = BoxLayout(size_hint_y=None, height=60, spacing=10)
-        cap_btn = Button(text="QUÉT NHÃN", background_color=(0.2, 0.7, 0.3, 1), bold=True)
-        cap_btn.bind(on_press=self.process_ocr)
-        
-        can_btn = Button(text="HỦY", background_color=(0.8, 0.2, 0.2, 1))
-        can_btn.bind(on_press=lambda x: self.scan_popup.dismiss())
-        
-        btn_layout.add_widget(cap_btn)
-        btn_layout.add_widget(can_btn)
-        
-        content.add_widget(self.cam)
-        content.add_widget(btn_layout)
-        
-        self.scan_popup = Popup(
-            title="Đưa nhãn thiết bị vào khung hình", 
-            content=content, 
-            size_hint=(0.95, 0.9),
-            auto_dismiss=False
-        )
-        self.scan_popup.open()
-
-    def process_ocr(self, instance):
-        """Chụp ảnh và gọi ML Kit xử lý"""
+    def import_data(self):
+        path = "my_device.txt"
+        if not os.path.exists(path): return
         try:
-            if not self.cam.texture:
-                return
+            with open(path, "r", encoding='utf-8') as f:
+                lines = f.readlines()
+                if lines:
+                    self.user_info = lines[0].strip()
+                    data = []
+                    for line in lines[1:]:
+                        if ',' in line: # Dựa trên cấu mẫu CSV trong file txt bạn gửi
+                            p = [i.strip() for i in line.split(',')]
+                            if len(p) >= 6:
+                                # p[4]: Model, p[5]: IMEI
+                                data.append({'stt': str(len(data)+1), 'model': p[4], 'imei': p[5], 'status': 'Kho', 'audit': 'Initial'})
+                    self.all_devices = data
+                    self.filtered_devices = data
+                    self.refresh_all_uis()
+        except Exception as e: print(f"Error Import: {e}")
 
-            # Trích xuất dữ liệu ảnh từ Camera Texture
-            from PIL import Image
-            pix = self.cam.texture.pixels
-            size = self.cam.texture.size
-            img = Image.frombytes('RGBA', size, pix).convert('RGB')
-            # Kivy texture bị ngược trục Y nên cần lật lại
-            img = img.transpose(Image.FLIP_TOP_BOTTOM)
-            
-            # Lưu file tạm vào thư mục dữ liệu của App
-            temp_path = os.path.join(self.user_data_dir, "last_capture.jpg")
-            img.save(temp_path)
+    def refresh_all_uis(self):
+        for screen_name, table_id in [('main', 'main_table'), ('scan', 'scan_table')]:
+            table = self.root.get_screen(screen_name).ids[table_id]
+            table.clear_widgets()
+            data_source = self.filtered_devices if screen_name == 'main' else self.all_devices
+            for d in data_source:
+                from kivy.factory import Factory
+                table.add_widget(Factory.DataRow(stt=d['stt'], model=d['model'], imei=d['imei'], status=d['status'], audit=d['audit']))
+        self.update_status_screen()
 
-            # Gọi ML Kit Scanner
-            raw_text = self.scanner.run_inference(temp_path)
-            info = self.scanner.extract_info(raw_text)
+    def update_status_screen(self):
+        container = self.root.get_screen('status').ids.status_container
+        container.clear_widgets()
+        models = {}
+        for d in self.all_devices:
+            name = d['model']
+            if name not in models: models[name] = True
+            if d['status'] == 'Mượn': models[name] = False
             
-            # Thêm vào danh sách kết quả
-            self.add_record(info['model'], info['imei'])
-            
-            # Đóng camera
-            self.scan_popup.dismiss()
-            
-        except Exception as e:
-            self.show_popup("Lỗi Xử Lý", f"Không thể quét: {str(e)}")
+        for name, is_full in models.items():
+            from kivy.factory import Factory
+            row = Factory.ModelStatusRow(model_name=name, is_full=is_full, status_text="ĐỦ" if is_full else "THIẾU")
+            row.on_release = lambda n=name, f=is_full: self.show_missing(n) if not f else None
+            container.add_widget(row)
 
-    def add_record(self, model, imei):
-        """Cập nhật dữ liệu vào bộ nhớ và giao diện"""
-        record = {
-            'time': datetime.now().strftime('%H:%M:%S'),
-            'user': self.root_ui.ids.user_input.text.strip(),
-            'status': self.root_ui.ids.status_spinner.text,
-            'model': model,
-            'imei': imei
-        }
-        self.data_records.append(record)
-        
-        # Tạo nhãn hiển thị mới trong danh sách
-        display_text = (
-            f"[b]{record['time']} - {record['status']}[/b]\n"
-            f"Model: {model} | IMEI: {imei}\n"
-            f"Người thực hiện: {record['user']}"
-        )
-        
-        lbl = Label(
-            text=display_text, 
-            markup=True,
-            size_hint_y=None, 
-            height=100, 
-            color=(0.2, 0.2, 0.2, 1),
-            halign='left',
-            valign='middle'
-        )
-        lbl.bind(size=lbl.setter('text_size'))
-        
-        self.root_ui.ids.result_list.add_widget(lbl)
-        self.root_ui.ids.log_label.text = f"Tổng cộng: {len(self.data_records)} bản ghi"
+    def show_missing(self, model_name):
+        self.filtered_devices = [d for d in self.all_devices if d['model'] == model_name and d['status'] == 'Mượn']
+        self.root.current = 'main'
+
+    def search_imei(self, query):
+        self.filtered_devices = [d for d in self.all_devices if query.lower() in d['imei'].lower()] if query else self.all_devices
+        self.refresh_all_uis()
+
+    def start_continuous_scan(self):
+        try:
+            if not hasattr(self, 'cam') or self.cam is None:
+                from kivy.uix.camera import Camera
+                self.cam = Camera(play=True, resolution=(1920, 1080))
+                self.root.get_screen('scan').ids.camera_preview.add_widget(self.cam)
+            self.scan_event = Clock.schedule_interval(self.analyze_qr, 0.5)
+            self.refresh_event = Clock.schedule_interval(self.refresh_cam, 60)
+        except Exception as e: print(f"Cam Error: {e}")
+
+    def refresh_cam(self, dt):
+        if hasattr(self, 'cam'): self.cam.play = False; self.cam.play = True
+
+    def stop_continuous_scan(self):
+        if hasattr(self, 'scan_event'): Clock.unschedule(self.scan_event)
+        if hasattr(self, 'refresh_event'): Clock.unschedule(self.refresh_event)
+
+    def analyze_qr(self, dt):
+        # Placeholder cho logic pyzbar
+        pass
+
+    def apply_scan(self, imei):
+        user = self.root.get_screen('scan').ids.scan_user.text.strip()
+        mode = self.root.get_screen('scan').ids.scan_mode.text
+        if not user: return
+        found = False
+        for d in self.all_devices:
+            if d['imei'] == imei:
+                d['status'], d['audit'] = mode, f"{datetime.datetime.now().strftime('%d/%m %H:%M')} - {user}"
+                found = True; break
+        if found:
+            if self.beep_ok: self.beep_ok.play()
+            self.refresh_all_uis()
+        elif self.beep_error: self.beep_error.play()
 
     def export_data(self):
-        """Gọi hàm lưu file CSV từ utils.py"""
-        success, message = save_to_csv(self.data_records, self.user_data_dir)
-        if success:
-            self.show_popup("Thành công", f"Dữ liệu đã xuất ra file CSV!\nĐường dẫn: {message}")
-        else:
-            self.show_popup("Lỗi Xuất File", message)
-
-    def show_popup(self, title, msg):
-        """Hàm tiện ích hiển thị thông báo"""
-        content = BoxLayout(orientation='vertical', padding=10)
-        content.add_widget(Label(text=msg, halign='center'))
-        btn = Button(text="ĐÓNG", size_hint_y=None, height=50)
-        popup = Popup(title=title, content=content, size_hint=(0.8, 0.4))
-        btn.bind(on_press=popup.dismiss)
-        content.add_widget(btn)
-        popup.open()
+        try:
+            with open("export_devices.csv", 'w', encoding='utf-8', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(["STT", "Model", "IMEI", "Status", "Audit"])
+                for d in self.all_devices: writer.writerow([d['stt'], d['model'], d['imei'], d['status'], d['audit']])
+            self.root.get_screen('main').ids.search_input.hint_text = "Exported OK"
+        except Exception as e: print(f"Export Error: {e}")
 
 if __name__ == '__main__':
-    BRDMTrackerPro().run()
+    DeviceApp().run()
