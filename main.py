@@ -64,8 +64,6 @@ KV = r'''
     Label:
         text: root.model_name
         color: (0,0,0,1)
-        halign: 'left'
-        text_size: self.size
     Label:
         text: root.status_text
         color: (0, 0.5, 0, 1) if root.is_full else (0.8, 0, 0, 1)
@@ -110,6 +108,7 @@ ScreenManager:
             hint_text: 'Search IMEI...'
             size_hint_y: None
             height: '40dp'
+            multiline: False
             on_text: app.search_imei(self.text)
         DataRow:
             stt: 'STT'; model: 'Model'; imei: 'IMEI/SN'; status: 'Status'; audit: 'Last Audit'; is_header: True
@@ -126,7 +125,7 @@ ScreenManager:
         orientation: 'vertical'
         padding: '10dp'
         Label:
-            text: "TRẠNG THÁI TỔNG HỢP MODEL"
+            text: "TRẠNG THÁI MODEL"
             size_hint_y: None
             height: '40dp'
             bold: True
@@ -155,11 +154,8 @@ ScreenManager:
             id: camera_preview
             size_hint_y: 0.4
             canvas.before:
-                Color:
-                    rgba: (0,0,0,1)
-                Rectangle:
-                    pos: self.pos
-                    size: self.size
+                Color: rgba: (0,0,0,1)
+                Rectangle: pos: self.pos, size: self.size
         BoxLayout:
             size_hint_y: None
             height: '40dp'
@@ -198,31 +194,58 @@ class DeviceApp(App):
         return Builder.load_string(KV)
 
     def import_data(self):
-        path = "my_device.txt"
-        if not os.path.exists(path): return
-        try:
-            with open(path, "r", encoding='utf-8') as f:
-                lines = f.readlines()
-                if lines:
-                    self.user_info = lines[0].strip()
+        csv_path = "export_devices.csv"
+        txt_path = "my_device.txt"
+        
+        # ƯU TIÊN 1: Nạp từ CSV đã xuất trước đó để kế thừa trạng thái mới nhất
+        if os.path.exists(csv_path):
+            try:
+                with open(csv_path, 'r', encoding='utf-8') as f:
+                    reader = csv.DictReader(f)
                     data = []
-                    for line in lines[1:]:
-                        if ',' in line: # Dựa trên cấu mẫu CSV trong file txt bạn gửi
-                            p = [i.strip() for i in line.split(',')]
-                            if len(p) >= 6:
-                                # p[4]: Model, p[5]: IMEI
-                                data.append({'stt': str(len(data)+1), 'model': p[4], 'imei': p[5], 'status': 'Kho', 'audit': 'Initial'})
+                    for row in reader:
+                        data.append({
+                            'stt': row['STT'],
+                            'model': row['Model'],
+                            'imei': row['IMEI'],
+                            'status': row['Status'],
+                            'audit': row['Audit']
+                        })
                     self.all_devices = data
                     self.filtered_devices = data
+                    # Cập nhật thông tin User từ dòng đầu file txt
+                    if os.path.exists(txt_path):
+                        with open(txt_path, 'r', encoding='utf-8') as tf:
+                            self.user_info = tf.readline().strip()
                     self.refresh_all_uis()
-        except Exception as e: print(f"Error Import: {e}")
+                    return
+            except Exception as e: print(f"CSV Import Error: {e}")
+
+        # ƯU TIÊN 2: Nạp từ TXT (Chỉ dùng cho lần đầu tiên chạy app)
+        if os.path.exists(txt_path):
+            try:
+                with open(txt_path, "r", encoding='utf-8') as f:
+                    lines = f.readlines()
+                    if lines:
+                        self.user_info = lines[0].strip()
+                        data = []
+                        for line in lines[1:]:
+                            if ',' in line:
+                                p = [i.strip() for i in line.split(',')]
+                                if len(p) >= 6:
+                                    # p[4] là Model Name, p[5] là IMEI dựa trên snippet của bạn
+                                    data.append({'stt': str(len(data)+1), 'model': p[4], 'imei': p[5], 'status': 'Kho', 'audit': 'Initial'})
+                        self.all_devices = data
+                        self.filtered_devices = data
+                        self.refresh_all_uis()
+            except Exception as e: print(f"TXT Import Error: {e}")
 
     def refresh_all_uis(self):
         for screen_name, table_id in [('main', 'main_table'), ('scan', 'scan_table')]:
             table = self.root.get_screen(screen_name).ids[table_id]
             table.clear_widgets()
-            data_source = self.filtered_devices if screen_name == 'main' else self.all_devices
-            for d in data_source:
+            source = self.filtered_devices if screen_name == 'main' else self.all_devices
+            for d in source:
                 from kivy.factory import Factory
                 table.add_widget(Factory.DataRow(stt=d['stt'], model=d['model'], imei=d['imei'], status=d['status'], audit=d['audit']))
         self.update_status_screen()
@@ -235,7 +258,6 @@ class DeviceApp(App):
             name = d['model']
             if name not in models: models[name] = True
             if d['status'] == 'Mượn': models[name] = False
-            
         for name, is_full in models.items():
             from kivy.factory import Factory
             row = Factory.ModelStatusRow(model_name=name, is_full=is_full, status_text="ĐỦ" if is_full else "THIẾU")
@@ -268,7 +290,7 @@ class DeviceApp(App):
         if hasattr(self, 'refresh_event'): Clock.unschedule(self.refresh_event)
 
     def analyze_qr(self, dt):
-        # Placeholder cho logic pyzbar
+        # Nơi tích hợp pyzbar để quét frame
         pass
 
     def apply_scan(self, imei):
@@ -278,7 +300,8 @@ class DeviceApp(App):
         found = False
         for d in self.all_devices:
             if d['imei'] == imei:
-                d['status'], d['audit'] = mode, f"{datetime.datetime.now().strftime('%d/%m %H:%M')} - {user}"
+                d['status'] = mode
+                d['audit'] = f"{datetime.datetime.now().strftime('%d/%m %H:%M')} - {user}"
                 found = True; break
         if found:
             if self.beep_ok: self.beep_ok.play()
@@ -287,11 +310,13 @@ class DeviceApp(App):
 
     def export_data(self):
         try:
+            # GHI ĐÈ FILE CSV (Chế độ 'w')
             with open("export_devices.csv", 'w', encoding='utf-8', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow(["STT", "Model", "IMEI", "Status", "Audit"])
-                for d in self.all_devices: writer.writerow([d['stt'], d['model'], d['imei'], d['status'], d['audit']])
-            self.root.get_screen('main').ids.search_input.hint_text = "Exported OK"
+                for d in self.all_devices:
+                    writer.writerow([d['stt'], d['model'], d['imei'], d['status'], d['audit']])
+            self.root.get_screen('main').ids.search_input.hint_text = "Dữ liệu mới nhất đã được ghi đè!"
         except Exception as e: print(f"Export Error: {e}")
 
 if __name__ == '__main__':
