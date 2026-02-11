@@ -1,4 +1,4 @@
-name: Build Android v1.2
+name: Build Android v1.3
 
 on:
   push:
@@ -18,8 +18,7 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          # Tự động lưu cache Gradle để tránh lỗi tải 502 và tăng tốc build
-          cache: 'gradle'
+          # Đã bỏ dòng cache: 'gradle' để tránh lỗi "No file matched"
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
@@ -48,10 +47,10 @@ jobs:
       - name: Install Python Dependencies
         run: |
           python -m pip install --upgrade pip
-          # Khóa phiên bản Cython để đảm bảo tương thích với Kivy 2.2.1
           pip install "cython<3.0" buildozer
 
-      - name: Cache Buildozer Global Directory
+      # Sử dụng cache cho cả thư mục Buildozer để lưu SDK, NDK và Gradle
+      - name: Cache Buildozer data
         uses: actions/cache@v4
         with:
           path: .buildozer
@@ -61,15 +60,13 @@ jobs:
 
       - name: Build with Buildozer
         run: |
-          # Dùng "yes |" để tự động vượt qua các bước xác nhận license và tải SDK/NDK
           yes | buildozer -v android debug
         env:
-          # Đảm bảo Buildozer sử dụng đúng Java 17 đã cài đặt ở trên
           JAVA_HOME: ${{ env.JAVA_HOME }}
           ACCEPT_SDK_LICENSE: "yes"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: DeviceManager-Debug-APK
+          name: DeviceManager-APK
           path: bin/*.apk
