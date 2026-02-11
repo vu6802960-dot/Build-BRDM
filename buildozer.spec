@@ -5,12 +5,8 @@ package.domain = org.test
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,ttf,wav,txt,csv
 version = 1.0
-
-# Quyền hạn cực kỳ quan trọng cho Android 13+
 android.permissions = CAMERA, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE, MANAGE_EXTERNAL_STORAGE
-
 requirements = python3, kivy==2.2.1, pillow, pyzbar, requests
-
 orientation = portrait
 fullscreen = 1
 android.api = 33
