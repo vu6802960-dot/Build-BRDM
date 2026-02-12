@@ -16,7 +16,7 @@ class MainScreen(Screen):
 class ScanScreen(Screen):
     pass
 
-# CHUỖI KV ĐÃ SỬA LỖI CÚ PHÁP TẠI DÒNG CANVAS
+# CHUỖI KV ĐÃ ĐƯỢC RÀ SOÁT TẤT CẢ LỖI THỤT DÒNG
 KV = r'''
 <DataRow@BoxLayout>:
     stt: ''
@@ -67,9 +67,9 @@ KV = r'''
         padding: '10dp'
         spacing: '8dp'
         canvas.before:
-            Color: 
+            Color:
                 rgba: (0.95, 0.95, 0.95, 1)
-            Rectangle: 
+            Rectangle:
                 pos: self.pos
                 size: self.size
 
