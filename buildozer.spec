@@ -37,7 +37,7 @@ android.permissions = CAMERA, WRITE_EXTERNAL_STORAGE, READ_EXTERNAL_STORAGE, INT
 
 # (int) Target Android API, should be as high as possible.
 # API 30 là bản ổn định nhất cho môi trường GitHub hiện tại
-android.api = 30
+android.api = 33
 
 # (int) Minimum API your APK will support.
 android.minapi = 21
@@ -79,4 +79,5 @@ log_level = 2
 
 # (int) Display build output in color (0 = False, 1 = True)
 warn_on_root = 1
+
 
