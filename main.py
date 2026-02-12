@@ -8,7 +8,7 @@ from kivy.clock import Clock
 import os
 import csv
 
-# KV Language - ĐÃ SỬA LỖI CÚ PHÁP TẠI DataRow 
+# KV Language - Đã kiểm tra kỹ cú pháp để tránh SyntaxError
 KV = r'''
 <DataRow@BoxLayout>:
     stt: ''; model: ''; imei: ''; status: ''; audit: ''; is_header: False
@@ -31,19 +31,21 @@ KV = r'''
         text: root.model
         size_hint_x: 0.25
         color: (1,1,1,1) if root.is_header else (0,0,0,1)
+        font_size: '11sp'
     Label:
         text: root.imei
         size_hint_x: 0.35
         color: (1,1,1,1) if root.is_header else (0,0,0,1)
+        font_size: '11sp'
     Label:
         text: root.status
         size_hint_x: 0.15
         bold: True
-        color: (1,1,1,1) if root.is_header else ((0.1, 0.6, 0.2, 1) if root.status == 'Kho' else (0.9, 0.2, 0.2, 1))
+        color: (1,1,1,1) if root.is_header else ((0.1, 0.6, 0.2, 1) if 'In' in root.status else (0.9, 0.2, 0.2, 1))
     Label:
         text: root.audit
         size_hint_x: 0.15
-        font_size: '10sp'
+        font_size: '9sp'
         color: (1,1,1,1) if root.is_header else (0.4, 0.4, 0.4, 1)
 
 <MainScreen>:
@@ -102,8 +104,8 @@ KV = r'''
             height: '60dp'
             on_release: root.manager.current = 'main'
         Label:
-            text: 'Giao diện Camera'
-            color: (0,0,0,1)
+            text: 'Camera Interface'
+            color: (1,1,1,1)
 
 ScreenManager:
     MainScreen:
@@ -115,16 +117,14 @@ class DeviceApp(App):
     devices_data = ListProperty([])
 
     def build(self):
-        # Nạp giao diện an toàn
         try:
-            self.root_widget = Builder.load_string(KV)
-            return self.root_widget
+            return Builder.load_string(KV)
         except Exception as e:
-            print(f"Lỗi nạp giao diện: {e}")
+            print(f"Lỗi KV: {e}")
             return None
 
     def play_beep(self, status='success'):
-        """Phát âm thanh an toàn, tránh lỗi NoneType từ Logcat"""
+        """Sửa lỗi NoneType từ Logcat cũ"""
         try:
             file = 'success.wav' if status == 'success' else 'error.wav'
             sound_path = os.path.join(os.path.dirname(__file__), file)
@@ -135,20 +135,29 @@ class DeviceApp(App):
             pass
 
     def import_data(self):
-        """Logic xử lý dữ liệu từ file txt/csv"""
+        """Khớp chính xác với cột trong my_device.txt"""
         source_file = 'my_device.txt'
         if not os.path.exists(source_file):
             self.play_beep('error')
             return
 
         try:
-            self.devices_data = []
+            new_data = []
             with open(source_file, 'r', encoding='utf-8') as f:
+                # Đọc file với DictReader
                 reader = csv.DictReader(f)
                 for i, row in enumerate(reader, 1):
-                    row['stt'] = str(i)
-                    self.devices_data.append(row)
+                    # Lấy dữ liệu theo đúng tên tiêu đề trong file của bạn
+                    item = {
+                        'stt': str(i),
+                        'model': row.get('Model Name', 'N/A'),
+                        'imei': row.get('IMEI', 'N/A'),
+                        'status': row.get('Status', 'N/A'),
+                        'audit': row.get('Last Audit', 'N/A')
+                    }
+                    new_data.append(item)
             
+            self.devices_data = new_data
             self.refresh_table()
             self.play_beep('success')
         except Exception as e:
@@ -158,27 +167,27 @@ class DeviceApp(App):
     def refresh_table(self):
         """Cập nhật giao diện bảng"""
         try:
+            # Truy cập đúng ID từ MainScreen
             container = self.root.get_screen('main').ids.table_content
             container.clear_widgets()
+            
             from kivy.factory import Factory
             for dev in self.devices_data:
-                row_widget = Factory.DataRow(
-                    stt=dev.get('stt', ''),
-                    model=dev.get('model', ''),
-                    imei=dev.get('imei', ''),
-                    status=dev.get('status', ''),
-                    audit=dev.get('audit', '')
+                row = Factory.DataRow(
+                    stt=dev['stt'],
+                    model=dev['model'],
+                    imei=dev['imei'],
+                    status=dev['status'],
+                    audit=dev['audit']
                 )
-                container.add_widget(row_widget)
+                container.add_widget(row)
         except Exception as e:
-            print(f"Lỗi hiển thị bảng: {e}")
+            print(f"Lỗi Refresh: {e}")
 
     def export_data(self):
-        """Xuất file kết quả"""
         if not self.devices_data:
             self.play_beep('error')
             return
-            
         try:
             with open('export_devices.csv', 'w', newline='', encoding='utf-8') as f:
                 writer = csv.DictWriter(f, fieldnames=['stt', 'model', 'imei', 'status', 'audit'])
