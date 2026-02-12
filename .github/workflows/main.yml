@@ -1,4 +1,4 @@
-name: Build Android v1.4
+name: Build Android v1.5
 
 on:
   push:
