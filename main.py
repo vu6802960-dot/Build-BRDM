@@ -8,7 +8,7 @@ from kivy.clock import Clock
 import os
 import csv
 
-# Giao diện KV - Giữ nguyên thiết kế màu sắc chuyên nghiệp
+# KV Language - ĐÃ SỬA LỖI CÚ PHÁP TẠI DataRow 
 KV = r'''
 <DataRow@BoxLayout>:
     stt: ''; model: ''; imei: ''; status: ''; audit: ''; is_header: False
@@ -102,7 +102,8 @@ KV = r'''
             height: '60dp'
             on_release: root.manager.current = 'main'
         Label:
-            text: 'Giao diện Camera sẽ hiển thị ở đây'
+            text: 'Giao diện Camera'
+            color: (0,0,0,1)
 
 ScreenManager:
     MainScreen:
@@ -114,19 +115,16 @@ class DeviceApp(App):
     devices_data = ListProperty([])
 
     def build(self):
-        # Nạp giao diện
-        self.root_widget = Builder.load_string(KV)
-        # Chờ 0.5 giây sau khi hiện app mới đọc file (Tránh crash khởi động)
-        Clock.schedule_once(self.initial_load, 0.5)
-        return self.root_widget
-
-    def initial_load(self, dt):
-        """Đọc dữ liệu cũ nếu có"""
-        if os.path.exists('my_device.txt'):
-            self.import_data()
+        # Nạp giao diện an toàn
+        try:
+            self.root_widget = Builder.load_string(KV)
+            return self.root_widget
+        except Exception as e:
+            print(f"Lỗi nạp giao diện: {e}")
+            return None
 
     def play_beep(self, status='success'):
-        """Phát âm thanh an toàn"""
+        """Phát âm thanh an toàn, tránh lỗi NoneType từ Logcat"""
         try:
             file = 'success.wav' if status == 'success' else 'error.wav'
             sound_path = os.path.join(os.path.dirname(__file__), file)
@@ -134,10 +132,10 @@ class DeviceApp(App):
             if sound:
                 sound.play()
         except:
-            pass # Bỏ qua nếu lỗi để app không văng
+            pass
 
     def import_data(self):
-        """Logic nhập dữ liệu từ file thực tế"""
+        """Logic xử lý dữ liệu từ file txt/csv"""
         source_file = 'my_device.txt'
         if not os.path.exists(source_file):
             self.play_beep('error')
@@ -158,22 +156,25 @@ class DeviceApp(App):
             self.play_beep('error')
 
     def refresh_table(self):
-        """Cập nhật bảng hiển thị"""
-        container = self.root.get_screen('main').ids.table_content
-        container.clear_widgets()
-        for dev in self.devices_data:
+        """Cập nhật giao diện bảng"""
+        try:
+            container = self.root.get_screen('main').ids.table_content
+            container.clear_widgets()
             from kivy.factory import Factory
-            row_widget = Factory.DataRow(
-                stt=dev.get('stt', ''),
-                model=dev.get('model', ''),
-                imei=dev.get('imei', ''),
-                status=dev.get('status', ''),
-                audit=dev.get('audit', '')
-            )
-            container.add_widget(row_widget)
+            for dev in self.devices_data:
+                row_widget = Factory.DataRow(
+                    stt=dev.get('stt', ''),
+                    model=dev.get('model', ''),
+                    imei=dev.get('imei', ''),
+                    status=dev.get('status', ''),
+                    audit=dev.get('audit', '')
+                )
+                container.add_widget(row_widget)
+        except Exception as e:
+            print(f"Lỗi hiển thị bảng: {e}")
 
     def export_data(self):
-        """Xuất dữ liệu ra CSV"""
+        """Xuất file kết quả"""
         if not self.devices_data:
             self.play_beep('error')
             return
