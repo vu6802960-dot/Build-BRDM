@@ -123,21 +123,22 @@ class DeviceApp(App):
 
     def build(self):
         try:
-            return Builder.load_string(KV)
+            self.root_widget = Builder.load_string(KV)
+            return self.root_widget
         except Exception as e:
-            return Label(text=f"Lỗi khởi tạo: {str(e)}")
+            return Label(text=f"Lỗi: {str(e)}")
 
     def open_file_explorer(self):
-        """Lazy import để tránh crash lúc mở app"""
         try:
             from plyer import filechooser
             filechooser.open_file(on_selection=self.handle_selection)
         except Exception as e:
-            self.user_info = f"Lỗi mở FileExplorer: {str(e)}"
+            self.user_info = f"Lỗi: {str(e)}"
 
     def handle_selection(self, selection):
         if selection:
-            self.process_file(selection[0])
+            # Trì hoãn xử lý file một chút để đảm bảo UI không bị lock
+            Clock.schedule_once(lambda dt: self.process_file(selection[0]), 0.1)
 
     def process_file(self, path):
         try:
@@ -163,12 +164,19 @@ class DeviceApp(App):
             self.refresh_table()
             self.play_beep('success')
         except Exception as e:
-            self.user_info = f"Lỗi đọc dữ liệu: {str(e)}"
+            self.user_info = f"Lỗi đọc file: {str(e)}"
             self.play_beep('error')
 
-    def refresh_table(self):
+    def refresh_table(self, *args):
+        """Đã thêm cơ chế kiểm tra an toàn để tránh lỗi NoneType"""
+        if not self.root or not self.root.has_screen('main'):
+            return
+
         try:
-            container = self.root.get_screen('main').ids.table_content
+            container = self.root.get_screen('main').ids.get('table_content')
+            if not container:
+                return
+                
             container.clear_widgets()
             
             model_missing = {}
@@ -188,14 +196,13 @@ class DeviceApp(App):
                 bg = (1, 1, 1, 1) if is_fail else (0.1, 0.6, 0.2, 0.8)
                 txt = (0, 0, 0, 1) if is_fail else (1, 1, 1, 1)
 
-                row = Factory.DataRow(
+                container.add_widget(Factory.DataRow(
                     stt=dev['stt'], model=dev['model'], imei=dev['imei'],
                     status=dev['status'], audit=dev['audit'],
                     bg_color=bg, text_color=txt
-                )
-                container.add_widget(row)
-        except:
-            pass
+                ))
+        except Exception as e:
+            print(f"Lỗi refresh_table: {e}")
 
     def toggle_filter(self):
         modes = ["all", "du", "thieu"]
@@ -205,7 +212,9 @@ class DeviceApp(App):
     def export_data(self):
         if not self.devices_data: return
         try:
-            with open('audit_export.csv', 'w', newline='', encoding='utf-8-sig') as f:
+            # Lưu vào thư mục download của Android nếu có thể
+            path = 'audit_export.csv'
+            with open(path, 'w', newline='', encoding='utf-8-sig') as f:
                 f.write(f"ID: {self.current_user_id}, User: {self.current_user_name}\n")
                 writer = csv.DictWriter(f, fieldnames=['stt', 'model', 'imei', 'status', 'audit'])
                 writer.writeheader()
@@ -215,13 +224,10 @@ class DeviceApp(App):
             self.play_beep('error')
 
     def play_beep(self, type_name):
-        """Xử lý âm thanh an toàn"""
         try:
             sound = SoundLoader.load(f"{type_name}.wav")
-            if sound:
-                sound.play()
-        except:
-            pass
+            if sound: sound.play()
+        except: pass
 
 if __name__ == '__main__':
     DeviceApp().run()
