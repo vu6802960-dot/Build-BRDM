@@ -6,11 +6,18 @@ from kivy.properties import ListProperty, StringProperty
 from kivy.core.audio import SoundLoader
 from kivy.clock import Clock
 from kivy.uix.label import Label
-from kivy.utils import platform # Để kiểm tra có phải Android không
+from kivy.utils import platform
 import os
 import csv
 
-# KV Language - Cấu trúc chuẩn hóa, không dùng dấu ; để tránh lỗi Syntax
+# 1. PHẢI KHAI BÁO CÁC LỚP SCREEN TRƯỚC KHI LOAD KV
+class MainScreen(Screen):
+    pass
+
+class ScanScreen(Screen):
+    pass
+
+# 2. CHUỖI KV (Đã sửa lỗi DataRow và định nghĩa Screen)
 KV = r'''
 <DataRow@BoxLayout>:
     stt: ''
@@ -117,6 +124,7 @@ KV = r'''
             text: 'Đang khởi tạo Camera...'
             color: (1,1,1,1)
 
+# ĐỊNH NGHĨA MANAGER Ở CUỐI CHUỖI KV
 ScreenManager:
     MainScreen:
     ScanScreen:
@@ -128,20 +136,19 @@ class DeviceApp(App):
 
     def build(self):
         try:
+            # Load KV sau khi các class đã được định nghĩa ở trên
             self.root_widget = Builder.load_string(KV)
             Clock.schedule_once(self.initial_load, 0.5)
             return self.root_widget
         except Exception as e:
+            # Hiển thị lỗi chính xác nếu còn gặp vấn đề
             return Label(text=f"Lỗi khởi tạo giao diện:\n{str(e)}", color=(1,0,0,1))
 
     def on_start(self):
-        """Hàm tự động chạy khi App vừa mở xong"""
         if platform == 'android':
-            # Trì hoãn hiện popup xin quyền 1.2s để app ổn định giao diện
             Clock.schedule_once(self.request_android_permissions, 1.2)
 
     def request_android_permissions(self, dt):
-        """Hiển thị popup xin quyền hệ thống"""
         try:
             from android.permissions import request_permissions, Permission
             request_permissions([
@@ -171,7 +178,6 @@ class DeviceApp(App):
         if not os.path.exists(source_file):
             self.play_beep('error')
             return
-
         try:
             self.devices_data = []
             with open(source_file, 'r', encoding='utf-8') as f:
@@ -181,7 +187,7 @@ class DeviceApp(App):
                     self.devices_data.append(row)
             self.refresh_table()
             self.play_beep('success')
-        except Exception as e:
+        except:
             self.play_beep('error')
 
     def refresh_table(self):
