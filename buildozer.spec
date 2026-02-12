@@ -16,7 +16,7 @@ source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,wav,csv,txt
 
 # (str) Application versioning (method 1)
-version = 1.5.2
+version = 1.5.3
 
 # (list) Application requirements
 # Cần plyer để chọn file, ffpyplayer để phát âm thanh
@@ -79,3 +79,4 @@ log_level = 2
 
 # (int) Display build output in color (0 = False, 1 = True)
 warn_on_root = 1
+
