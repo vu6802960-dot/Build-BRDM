@@ -16,7 +16,7 @@ orientation = portrait
 android.permissions = CAMERA, WRITE_EXTERNAL_STORAGE, READ_EXTERNAL_STORAGE, INTERNET
 
 # THAY ĐỔI TẠI ĐÂY: Dùng API 33 để đảm bảo có sẵn trong SDK
-android.api = 30
+android.api = 33
 android.minapi = 21
 android.ndk = 25b
 android.archs = arm64-v8a, armeabi-v7a
@@ -24,6 +24,7 @@ android.accept_sdk_license = True
 
 [buildozer]
 log_level = 2
+
 
 
 
