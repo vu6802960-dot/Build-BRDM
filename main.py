@@ -6,9 +6,9 @@ from kivy.properties import ListProperty, StringProperty
 from kivy.core.audio import SoundLoader
 from kivy.clock import Clock
 from kivy.uix.label import Label
-from kivy.utils import platform
 import os
 import csv
+import io
 
 class MainScreen(Screen):
     pass
@@ -16,7 +16,6 @@ class MainScreen(Screen):
 class ScanScreen(Screen):
     pass
 
-# CHUỖI KV ĐÃ ĐƯỢC RÀ SOÁT TẤT CẢ LỖI THỤT DÒNG
 KV = r'''
 <DataRow@BoxLayout>:
     stt: ''
@@ -45,19 +44,23 @@ KV = r'''
         text: root.model
         size_hint_x: 0.25
         color: root.text_color
+        font_size: '10sp'
+        shorten: True
+        shorten_from: 'right'
     Label:
         text: root.imei
         size_hint_x: 0.35
         color: root.text_color
+        font_size: '10sp'
     Label:
         text: root.status
         size_hint_x: 0.15
         bold: True
-        color: (0.9, 0.1, 0.1, 1) if root.status in ['Occupied', 'Mượn'] else root.text_color
+        color: (0.8, 0.1, 0.1, 1) if root.status in ['Occupied', 'Mượn'] else (0.1, 0.5, 0.1, 1)
     Label:
         text: root.audit
         size_hint_x: 0.15
-        font_size: '9sp'
+        font_size: '8sp'
         color: root.text_color
 
 <MainScreen>:
@@ -79,7 +82,6 @@ KV = r'''
             height: '40dp'
             color: (0.12, 0.45, 0.7, 1)
             bold: True
-            font_size: '15sp'
 
         BoxLayout:
             size_hint_y: None
@@ -130,11 +132,8 @@ class DeviceApp(App):
     filter_mode = StringProperty("all")
 
     def build(self):
-        try:
-            self.root_widget = Builder.load_string(KV)
-            return self.root_widget
-        except Exception as e:
-            return Label(text=f"Lỗi cú pháp KV:\n{str(e)}", color=(1,0,0,1))
+        self.root_widget = Builder.load_string(KV)
+        return self.root_widget
 
     def open_file_explorer(self):
         try:
@@ -150,65 +149,80 @@ class DeviceApp(App):
     def process_file(self, path):
         try:
             new_data = []
-            with open(path, 'r', encoding='utf-8') as f:
-                reader = csv.DictReader(f)
-                for i, row in enumerate(reader, 1):
-                    if i == 1:
-                        self.current_user_id = row.get('Single ID', 'Unknown')
-                        self.current_user_name = row.get('Name', 'User')
-                        self.user_info = f"ID: {self.current_user_id} | User: {self.current_user_name}"
-                    
-                    item = {
-                        'stt': str(i),
-                        'model': row.get('Model Name', ''),
-                        'imei': row.get('IMEI', ''),
-                        'status': row.get('Status', ''),
-                        'audit': row.get('Last Audit', '')
-                    }
-                    new_data.append(item)
+            # Sử dụng utf-8-sig để tự động bỏ qua ký tự BOM
+            with open(path, 'r', encoding='utf-8-sig') as f:
+                # Đọc tất cả dòng và lọc bỏ các dòng trống thực sự
+                lines = [line.strip() for line in f.readlines() if line.strip()]
+                
+            if not lines:
+                self.user_info = "File trống!"
+                return
 
-            self.devices_data = new_data
-            self.refresh_table()
-            self.play_beep('success')
+            # Chuyển list các dòng sạch thành một file ảo để DictReader xử lý
+            csv_file = io.StringIO("\n".join(lines))
+            reader = csv.DictReader(csv_file)
+            
+            # Chuẩn hóa Header: bỏ khoảng trắng thừa
+            reader.fieldnames = [fn.strip() for fn in reader.fieldnames]
+
+            for i, row in enumerate(reader, 1):
+                # Lấy ID/User từ bản ghi đầu tiên hợp lệ
+                if i == 1:
+                    self.current_user_id = row.get('Single ID', 'N/A')
+                    self.current_user_name = row.get('Name', 'User')
+                    self.user_info = f"ID: {self.current_user_id} | User: {self.current_user_name}"
+                
+                # Ánh xạ cực kỳ linh hoạt
+                item = {
+                    'stt': str(i),
+                    'model': row.get('Model Name', row.get('Model', 'N/A')),
+                    'imei': row.get('IMEI', 'N/A'),
+                    'status': row.get('Status', 'N/A'),
+                    'audit': row.get('Last Audit', '')
+                }
+                new_data.append(item)
+
+            if new_data:
+                self.devices_data = new_data
+                self.refresh_table()
+                self.play_beep('success')
+            else:
+                self.user_info = "Không tìm thấy dữ liệu hợp lệ trong file"
+
         except Exception as e:
-            self.user_info = f"Lỗi đọc file: {str(e)}"
+            self.user_info = f"Lỗi nạp file: {str(e)}"
             self.play_beep('error')
 
     def refresh_table(self, *args):
-        if not self.root or not self.root.has_screen('main'):
-            return
+        if not self.root: return
+        container = self.root.get_screen('main').ids.get('table_content')
+        if not container: return
+        
+        container.clear_widgets()
+        
+        # Logic Model Xanh/Trắng
+        model_missing = {}
+        for d in self.devices_data:
+            m = d['model']
+            if d['status'] in ['Occupied', 'Mượn']:
+                model_missing[m] = True
 
-        try:
-            container = self.root.get_screen('main').ids.get('table_content')
-            if not container:
-                return
-                
-            container.clear_widgets()
+        from kivy.factory import Factory
+        for dev in self.devices_data:
+            m = dev['model']
+            is_fail = model_missing.get(m, False)
             
-            model_missing = {}
-            for d in self.devices_data:
-                m = d['model']
-                if d['status'] in ['Occupied', 'Mượn']:
-                    model_missing[m] = True
+            if self.filter_mode == "du" and is_fail: continue
+            if self.filter_mode == "thieu" and not is_fail: continue
 
-            from kivy.factory import Factory
-            for dev in self.devices_data:
-                m = dev['model']
-                is_fail = model_missing.get(m, False)
-                
-                if self.filter_mode == "du" and is_fail: continue
-                if self.filter_mode == "thieu" and not is_fail: continue
+            bg = (1, 1, 1, 1) if is_fail else (0.1, 0.6, 0.2, 0.8)
+            txt = (0, 0, 0, 1) if is_fail else (1, 1, 1, 1)
 
-                bg = (1, 1, 1, 1) if is_fail else (0.1, 0.6, 0.2, 0.8)
-                txt = (0, 0, 0, 1) if is_fail else (1, 1, 1, 1)
-
-                container.add_widget(Factory.DataRow(
-                    stt=dev['stt'], model=dev['model'], imei=dev['imei'],
-                    status=dev['status'], audit=dev['audit'],
-                    bg_color=bg, text_color=txt
-                ))
-        except Exception as e:
-            print(f"Lỗi refresh_table: {e}")
+            container.add_widget(Factory.DataRow(
+                stt=dev['stt'], model=dev['model'], imei=dev['imei'],
+                status=dev['status'], audit=dev['audit'],
+                bg_color=bg, text_color=txt
+            ))
 
     def toggle_filter(self):
         modes = ["all", "du", "thieu"]
