@@ -16,6 +16,7 @@ class MainScreen(Screen):
 class ScanScreen(Screen):
     pass
 
+# CHUỖI KV ĐÃ SỬA LỖI CÚ PHÁP TẠI DÒNG CANVAS
 KV = r'''
 <DataRow@BoxLayout>:
     stt: ''
@@ -66,8 +67,11 @@ KV = r'''
         padding: '10dp'
         spacing: '8dp'
         canvas.before:
-            Color: rgba: (0.95, 0.95, 0.95, 1)
-            Rectangle: pos: self.pos; size: self.size
+            Color: 
+                rgba: (0.95, 0.95, 0.95, 1)
+            Rectangle: 
+                pos: self.pos
+                size: self.size
 
         Label:
             text: app.user_info
@@ -96,7 +100,11 @@ KV = r'''
                 on_release: app.export_data()
 
         DataRow:
-            stt: 'STT'; model: 'MODEL'; imei: 'IMEI'; status: 'T.THÁI'; audit: 'AUDIT'
+            stt: 'STT'
+            model: 'MODEL'
+            imei: 'IMEI'
+            status: 'T.THÁI'
+            audit: 'AUDIT'
             is_header: True
             bg_color: (0.12, 0.45, 0.7, 1)
             text_color: (1, 1, 1, 1)
@@ -126,7 +134,7 @@ class DeviceApp(App):
             self.root_widget = Builder.load_string(KV)
             return self.root_widget
         except Exception as e:
-            return Label(text=f"Lỗi: {str(e)}")
+            return Label(text=f"Lỗi cú pháp KV:\n{str(e)}", color=(1,0,0,1))
 
     def open_file_explorer(self):
         try:
@@ -137,7 +145,6 @@ class DeviceApp(App):
 
     def handle_selection(self, selection):
         if selection:
-            # Trì hoãn xử lý file một chút để đảm bảo UI không bị lock
             Clock.schedule_once(lambda dt: self.process_file(selection[0]), 0.1)
 
     def process_file(self, path):
@@ -168,7 +175,6 @@ class DeviceApp(App):
             self.play_beep('error')
 
     def refresh_table(self, *args):
-        """Đã thêm cơ chế kiểm tra an toàn để tránh lỗi NoneType"""
         if not self.root or not self.root.has_screen('main'):
             return
 
@@ -212,9 +218,7 @@ class DeviceApp(App):
     def export_data(self):
         if not self.devices_data: return
         try:
-            # Lưu vào thư mục download của Android nếu có thể
-            path = 'audit_export.csv'
-            with open(path, 'w', newline='', encoding='utf-8-sig') as f:
+            with open('audit_export.csv', 'w', newline='', encoding='utf-8-sig') as f:
                 f.write(f"ID: {self.current_user_id}, User: {self.current_user_name}\n")
                 writer = csv.DictWriter(f, fieldnames=['stt', 'model', 'imei', 'status', 'audit'])
                 writer.writeheader()
