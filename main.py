@@ -10,11 +10,6 @@ from kivy.utils import platform
 import os
 import csv
 
-try:
-    from plyer import filechooser
-except:
-    filechooser = None
-
 class MainScreen(Screen):
     pass
 
@@ -127,11 +122,18 @@ class DeviceApp(App):
     filter_mode = StringProperty("all")
 
     def build(self):
-        return Builder.load_string(KV)
+        try:
+            return Builder.load_string(KV)
+        except Exception as e:
+            return Label(text=f"Lỗi khởi tạo: {str(e)}")
 
     def open_file_explorer(self):
-        if filechooser:
+        """Lazy import để tránh crash lúc mở app"""
+        try:
+            from plyer import filechooser
             filechooser.open_file(on_selection=self.handle_selection)
+        except Exception as e:
+            self.user_info = f"Lỗi mở FileExplorer: {str(e)}"
 
     def handle_selection(self, selection):
         if selection:
@@ -141,22 +143,19 @@ class DeviceApp(App):
         try:
             new_data = []
             with open(path, 'r', encoding='utf-8') as f:
-                # Đọc dòng đầu tiên để bỏ qua header hoặc tìm User
                 reader = csv.DictReader(f)
                 for i, row in enumerate(reader, 1):
-                    # Lấy ID & User từ dòng dữ liệu đầu tiên
                     if i == 1:
                         self.current_user_id = row.get('Single ID', 'Unknown')
                         self.current_user_name = row.get('Name', 'User')
                         self.user_info = f"ID: {self.current_user_id} | User: {self.current_user_name}"
                     
-                    # Chuẩn hóa key cho bảng hiển thị
                     item = {
                         'stt': str(i),
-                        'model': row.get('Model Name', row.get('model', '')),
-                        'imei': row.get('IMEI', row.get('imei', '')),
-                        'status': row.get('Status', row.get('status', '')),
-                        'audit': row.get('Last Audit', row.get('audit', ''))
+                        'model': row.get('Model Name', ''),
+                        'imei': row.get('IMEI', ''),
+                        'status': row.get('Status', ''),
+                        'audit': row.get('Last Audit', '')
                     }
                     new_data.append(item)
 
@@ -164,37 +163,39 @@ class DeviceApp(App):
             self.refresh_table()
             self.play_beep('success')
         except Exception as e:
-            self.user_info = f"Lỗi: {str(e)}"
+            self.user_info = f"Lỗi đọc dữ liệu: {str(e)}"
             self.play_beep('error')
 
     def refresh_table(self):
-        container = self.root.get_screen('main').ids.table_content
-        container.clear_widgets()
-        
-        # Check model status
-        model_missing = {}
-        for d in self.devices_data:
-            m = d['model']
-            if d['status'] in ['Occupied', 'Mượn']:
-                model_missing[m] = True
-
-        from kivy.factory import Factory
-        for dev in self.devices_data:
-            m = dev['model']
-            is_fail = model_missing.get(m, False)
+        try:
+            container = self.root.get_screen('main').ids.table_content
+            container.clear_widgets()
             
-            if self.filter_mode == "du" and is_fail: continue
-            if self.filter_mode == "thieu" and not is_fail: continue
+            model_missing = {}
+            for d in self.devices_data:
+                m = d['model']
+                if d['status'] in ['Occupied', 'Mượn']:
+                    model_missing[m] = True
 
-            bg = (1, 1, 1, 1) if is_fail else (0.1, 0.6, 0.2, 0.8)
-            txt = (0, 0, 0, 1) if is_fail else (1, 1, 1, 1)
+            from kivy.factory import Factory
+            for dev in self.devices_data:
+                m = dev['model']
+                is_fail = model_missing.get(m, False)
+                
+                if self.filter_mode == "du" and is_fail: continue
+                if self.filter_mode == "thieu" and not is_fail: continue
 
-            row = Factory.DataRow(
-                stt=dev['stt'], model=dev['model'], imei=dev['imei'],
-                status=dev['status'], audit=dev['audit'],
-                bg_color=bg, text_color=txt
-            )
-            container.add_widget(row)
+                bg = (1, 1, 1, 1) if is_fail else (0.1, 0.6, 0.2, 0.8)
+                txt = (0, 0, 0, 1) if is_fail else (1, 1, 1, 1)
+
+                row = Factory.DataRow(
+                    stt=dev['stt'], model=dev['model'], imei=dev['imei'],
+                    status=dev['status'], audit=dev['audit'],
+                    bg_color=bg, text_color=txt
+                )
+                container.add_widget(row)
+        except:
+            pass
 
     def toggle_filter(self):
         modes = ["all", "du", "thieu"]
@@ -205,9 +206,7 @@ class DeviceApp(App):
         if not self.devices_data: return
         try:
             with open('audit_export.csv', 'w', newline='', encoding='utf-8-sig') as f:
-                # Ghi ID và User ở dòng đầu tiên của file Export
                 f.write(f"ID: {self.current_user_id}, User: {self.current_user_name}\n")
-                
                 writer = csv.DictWriter(f, fieldnames=['stt', 'model', 'imei', 'status', 'audit'])
                 writer.writeheader()
                 writer.writerows(self.devices_data)
@@ -215,11 +214,14 @@ class DeviceApp(App):
         except:
             self.play_beep('error')
 
-    def play_beep(self, type):
+    def play_beep(self, type_name):
+        """Xử lý âm thanh an toàn"""
         try:
-            s = SoundLoader.load(f"{type}.wav")
-            if s: s.play()
-        except: pass
+            sound = SoundLoader.load(f"{type_name}.wav")
+            if sound:
+                sound.play()
+        except:
+            pass
 
 if __name__ == '__main__':
     DeviceApp().run()
