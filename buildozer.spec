@@ -16,7 +16,7 @@ source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,wav,csv,txt
 
 # (str) Application versioning (method 1)
-version = 1.6.4
+version = 1.6.6
 
 # (list) Application requirements
 # Cần plyer để chọn file, ffpyplayer để phát âm thanh
@@ -37,7 +37,7 @@ android.permissions = CAMERA, WRITE_EXTERNAL_STORAGE, READ_EXTERNAL_STORAGE, INT
 
 # (int) Target Android API, should be as high as possible.
 # API 30 là bản ổn định nhất cho môi trường GitHub hiện tại
-android.api = 33
+android.api = 30
 
 # (int) Minimum API your APK will support.
 android.minapi = 21
@@ -79,6 +79,7 @@ log_level = 2
 
 # (int) Display build output in color (0 = False, 1 = True)
 warn_on_root = 1
+
 
 
 
