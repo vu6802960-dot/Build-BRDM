@@ -7,9 +7,9 @@ from kivy.core.audio import SoundLoader
 from kivy.clock import Clock
 from kivy.utils import platform
 import os
-import shutil
+import io
 
-# Xin quyền đặc biệt cho Android 11+
+# Xin quyền truy cập bộ nhớ mức cao nhất có thể cho ứng dụng
 if platform == 'android':
     from android.permissions import request_permissions, Permission
     request_permissions([
@@ -75,7 +75,7 @@ KV = r'''
         spacing: '8dp'
         canvas.before:
             Color:
-                rgba: (0.95, 0.95, 0.95, 1)
+                rgba: (0.96, 0.96, 0.96, 1)
             Rectangle:
                 pos: self.pos
                 size: self.size
@@ -84,9 +84,9 @@ KV = r'''
             text: app.user_info
             size_hint_y: None
             height: '70dp'
-            color: (0, 0.2, 0.4, 1)
+            color: (0.05, 0.25, 0.45, 1)
             bold: True
-            font_size: '11sp'
+            font_size: '12sp'
             halign: 'center'
             valign: 'middle'
             text_size: self.width, None
@@ -115,7 +115,7 @@ KV = r'''
             imei: 'IMEI'
             status: 'T.THÁI'
             audit: 'AUDIT'
-            bg_color: (0.12, 0.45, 0.7, 1)
+            bg_color: (0.1, 0.4, 0.6, 1)
             text_color: (1, 1, 1, 1)
 
         ScrollView:
@@ -132,7 +132,7 @@ ScreenManager:
 '''
 
 class DeviceApp(App):
-    user_info = StringProperty("V1.6.7: CHỜ NHẬP FILE...")
+    user_info = StringProperty("V1.6.8: SẴN SÀNG\nVUI LÒNG NHẬN FILE")
     devices_data = ListProperty([])
     filter_mode = StringProperty("all")
     current_user_id = ""
@@ -146,100 +146,105 @@ class DeviceApp(App):
             from plyer import filechooser
             filechooser.open_file(on_selection=self.handle_selection)
         except Exception as e:
-            self.user_info = f"LỖI KHỞI ĐỘNG: {str(e)}"
+            self.user_info = f"LỖI KHỞI ĐỘNG CHỌN FILE: {str(e)}"
 
     def handle_selection(self, selection):
         if not selection:
             self.user_info = "BẠN ĐÃ HỦY CHỌN FILE."
             return
         
+        # Lấy đường dẫn file
         path = selection[0]
-        # Hiển thị thông báo đang xử lý để người dùng biết App không treo
-        self.user_info = f"ĐANG ĐỌC:\n{os.path.basename(path)}"
-        Clock.schedule_once(lambda dt: self.process_file_v167(path), 0.2)
+        self.user_info = f"ĐANG XỬ LÝ:\n{os.path.basename(path)}"
+        
+        # Sử dụng Clock để tách biệt quá trình đọc file khỏi UI Thread
+        Clock.schedule_once(lambda dt: self.parse_binary_v168(path), 0.1)
 
-    def process_file_v167(self, path):
+    def parse_binary_v168(self, path):
         try:
-            # 1. KỸ THUẬT COPY FILE VÀO CACHE (Vượt qua Scoped Storage)
-            temp_path = os.path.join(self.user_data_dir, "cached_device.txt")
-            try:
-                shutil.copy2(path, temp_path)
-            except:
-                # Nếu không copy được, thử đọc trực tiếp (dành cho PC)
-                temp_path = path
-
-            # 2. ĐỌC NHỊ PHÂN VÀ GIẢI MÃ (Vượt qua lỗi Encoding/BOM)
-            with open(temp_path, 'rb') as f:
-                raw_bytes = f.read()
-            
-            # Thử giải mã với các bảng mã phổ biến nhất
-            decoded_text = ""
-            for enc in ['utf-8-sig', 'utf-8', 'latin-1']:
-                try:
-                    decoded_text = raw_bytes.decode(enc)
-                    break
-                except: continue
-            
-            if not decoded_text:
-                self.user_info = "LỖI: KHÔNG THỂ GIẢI MÃ NỘI DUNG FILE."
+            # 1. ĐỌC NHỊ PHÂN TRỰC TIẾP (Bỏ qua mọi rào cản Text Mode)
+            if not os.path.exists(path):
+                # Thử fix đường dẫn ảo trên Android
+                self.user_info = "LỖI: KHÔNG TÌM THẤY TỆP.\nHãy thử để file trong thư mục DOWNLOAD."
                 return
 
-            # 3. LÀM SẠCH VÀ TÌM TIÊU ĐỀ (Vượt qua dòng trống đầu file)
-            lines = [l.strip() for l in decoded_text.splitlines() if l.strip()]
+            with open(path, 'rb') as f:
+                raw_bytes = f.read()
+
+            if len(raw_bytes) == 0:
+                self.user_info = "LỖI: TỆP TRỐNG (0 BYTES)."
+                return
+
+            # 2. GIẢI MÃ THỦ CÔNG
+            content = ""
+            for codec in ['utf-8-sig', 'utf-8', 'latin-1']:
+                try:
+                    content = raw_bytes.decode(codec)
+                    break
+                except: continue
+
+            if not content:
+                self.user_info = "LỖI: KHÔNG THỂ GIẢI MÃ TỆP."
+                return
+
+            # 3. LỌC DỮ LIỆU THỰC SỰ
+            lines = content.splitlines()
+            valid_lines = [l.strip() for l in lines if l.strip()] # Loại bỏ dòng trống
+
+            # Tìm dòng tiêu đề
             header_idx = -1
-            for i, line in enumerate(lines):
+            for i, line in enumerate(valid_lines):
                 if "Single ID" in line and "Model Name" in line:
                     header_idx = i
                     break
             
             if header_idx == -1:
-                self.user_info = "LỖI: FILE KHÔNG ĐÚNG CẤU TRÚC ERP."
+                self.user_info = "LỖI: KHÔNG TÌM THẤY TIÊU ĐỀ 'Single ID'."
                 return
 
-            # 4. PHÂN TÍCH CỘT THỦ CÔNG (Vượt qua lỗi dấu phẩy trong dữ liệu)
-            headers = [h.strip() for h in lines[header_idx].split(',')]
+            # 4. TRÍCH XUẤT CỘT
+            headers = [h.strip() for h in valid_lines[header_idx].split(',')]
             try:
-                idx_id = headers.index("Single ID")
-                idx_name = headers.index("Name")
-                idx_model = headers.index("Model Name")
-                idx_imei = headers.index("IMEI")
-                idx_status = headers.index("Status")
-                idx_audit = headers.index("Last Audit")
+                i_id = headers.index("Single ID")
+                i_name = headers.index("Name")
+                i_model = headers.index("Model Name")
+                i_imei = headers.index("IMEI")
+                i_status = headers.index("Status")
+                i_audit = headers.index("Last Audit")
             except ValueError as e:
-                self.user_info = f"THIẾU CỘT: {str(e)}"
+                self.user_info = f"LỖI THIẾU CỘT: {str(e)}"
                 return
 
-            parsed_data = []
-            for i, line in enumerate(lines[header_idx+1:], 1):
+            temp_list = []
+            data_rows = valid_lines[header_idx + 1:]
+            
+            for idx, line in enumerate(data_rows, 1):
                 cols = [c.strip() for c in line.split(',')]
-                if len(cols) < idx_status: continue
+                if len(cols) < i_status: continue
 
-                # Lấy thông tin User từ dòng đầu tiên có dữ liệu
-                if i == 1:
-                    self.current_user_id = cols[idx_id]
-                    self.current_user_name = cols[idx_name]
+                if idx == 1:
+                    self.current_user_id = cols[i_id]
+                    self.current_user_name = cols[i_name]
+                
+                # Gộp cột Audit nếu bị lệch do dấu phẩy
+                audit_str = ", ".join(cols[i_audit:]) if i_audit < len(cols) else ""
 
-                # Gộp các phần dư vào Audit (nếu nội dung audit có dấu phẩy)
-                audit_val = ""
-                if idx_audit < len(cols):
-                    audit_val = ", ".join(cols[idx_audit:])
-
-                parsed_data.append({
-                    'stt': str(i),
-                    'model': cols[idx_model],
-                    'imei': cols[idx_imei],
-                    'status': cols[idx_status],
-                    'audit': audit_val
+                temp_list.append({
+                    'stt': str(idx),
+                    'model': cols[i_model],
+                    'imei': cols[i_imei],
+                    'status': cols[i_status],
+                    'audit': audit_str
                 })
 
-            # 5. HIỂN THỊ KẾT QUẢ
-            if parsed_data:
-                self.devices_data = parsed_data
-                self.user_info = f"ID: {self.current_user_id} | {self.current_user_name}\nĐÃ NẠP: {len(parsed_data)} MÁY"
+            # 5. CẬP NHẬT GIAO DIỆN
+            if temp_list:
+                self.devices_data = temp_list
+                self.user_info = f"ID: {self.current_user_id} | {self.current_user_name}\nĐÃ NẠP THÀNH CÔNG: {len(temp_list)} MÁY"
                 self.refresh_table()
                 self.play_beep('success')
             else:
-                self.user_info = "CẢNH BÁO: FILE KHÔNG CÓ DỮ LIỆU MÁY."
+                self.user_info = "LỖI: KHÔNG CÓ DỮ LIỆU HỢP LỆ."
 
         except Exception as e:
             self.user_info = f"LỖI HỆ THỐNG: {str(e)}"
@@ -250,7 +255,6 @@ class DeviceApp(App):
             container = self.root.get_screen('main').ids.table_content
             container.clear_widgets()
             
-            # Logic lọc và tô màu
             model_missing = {}
             for d in self.devices_data:
                 if d['status'] in ['Occupied', 'Mượn']:
