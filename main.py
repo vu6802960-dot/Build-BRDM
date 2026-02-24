@@ -8,16 +8,7 @@ from kivy.clock import Clock
 from kivy.utils import platform
 import os
 import io
-
-# Xin quyền truy cập toàn diện trên Android
-if platform == 'android':
-    from android.permissions import request_permissions, Permission
-    request_permissions([
-        Permission.READ_EXTERNAL_STORAGE, 
-        Permission.WRITE_EXTERNAL_STORAGE,
-        # Quyền này giúp Android 11+ dễ thở hơn khi đọc file txt
-        "android.permission.MANAGE_EXTERNAL_STORAGE" 
-    ])
+import csv
 
 class MainScreen(Screen):
     pass
@@ -48,6 +39,7 @@ KV = r'''
         text: root.stt
         size_hint_x: 0.1
         color: root.text_color
+        font_size: '10sp'
     Label:
         text: root.model
         size_hint_x: 0.25
@@ -57,7 +49,7 @@ KV = r'''
         text: root.imei
         size_hint_x: 0.35
         color: root.text_color
-        font_size: '10sp'
+        font_size: '9sp'
     Label:
         text: root.status
         size_hint_x: 0.15
@@ -66,7 +58,7 @@ KV = r'''
     Label:
         text: root.audit
         size_hint_x: 0.15
-        font_size: '8sp'
+        font_size: '7sp'
         color: root.text_color
 
 <MainScreen>:
@@ -85,7 +77,7 @@ KV = r'''
         Label:
             text: app.user_info
             size_hint_y: None
-            height: '75dp'
+            height: '80dp'
             color: (0, 0.2, 0.5, 1)
             bold: True
             font_size: '11sp'
@@ -134,7 +126,7 @@ ScreenManager:
 '''
 
 class DeviceApp(App):
-    user_info = StringProperty("V1.6.9: HỆ THỐNG SẴN SÀNG\nHÃY CHỌN FILE .TXT")
+    user_info = StringProperty("PHIÊN BẢN 1.7.0\nVUI LÒNG CHỌN FILE MY_DEVICE.TXT")
     devices_data = ListProperty([])
     filter_mode = StringProperty("all")
     current_user_id = ""
@@ -148,139 +140,99 @@ class DeviceApp(App):
             from plyer import filechooser
             filechooser.open_file(on_selection=self.handle_selection)
         except Exception as e:
-            self.user_info = f"KHÔNG MỞ ĐƯỢC TRÌNH CHỌN FILE: {str(e)}"
+            self.user_info = f"LỖI HỆ THỐNG: {str(e)}"
 
     def handle_selection(self, selection):
-        if not selection:
-            self.user_info = "BẠN CHƯA CHỌN FILE NÀO."
-            return
-        
+        if not selection: return
         path = selection[0]
-        self.user_info = f"ĐANG PHÂN TÍCH FILE:\n{os.path.basename(path)}"
-        # Đợi 0.5 giây để UI cập nhật chữ "Đang phân tích"
-        Clock.schedule_once(lambda dt: self.ultimate_parse_v169(path), 0.5)
+        self.user_info = f"ĐANG XỬ LÝ DỮ LIỆU..."
+        # Gọi hàm xử lý sau 300ms để đảm bảo UI không bị đứng
+        Clock.schedule_once(lambda dt: self.parse_v170(path), 0.3)
 
-    def ultimate_parse_v169(self, path):
+    def parse_v170(self, path):
         try:
-            raw_data = None
+            # 1. Đọc file dưới dạng nhị phân để an toàn tuyệt đối
+            with open(path, 'rb') as f:
+                raw_bytes = f.read()
             
-            # Kỹ thuật đọc cưỡng ép: Nếu open(path) thất bại, thử tìm file trong Download
-            try:
-                with open(path, 'rb') as f:
-                    raw_data = f.read()
-            except Exception as e:
-                # Nếu không đọc được từ đường dẫn ảo, thử tìm trong thư mục Download thật
-                filename = os.path.basename(path)
-                alt_path = f"/storage/emulated/0/Download/{filename}"
-                if os.path.exists(alt_path):
-                    with open(alt_path, 'rb') as f:
-                        raw_data = f.read()
-                else:
-                    self.user_info = f"LỖI TRUY CẬP: Android chặn đọc file này.\nThử chép file vào Download & chọn lại."
-                    return
-
-            if not raw_data or len(raw_data) < 10:
-                self.user_info = "LỖI: FILE KHÔNG CÓ DỮ LIỆU HOẶC QUÁ NHỎ."
-                return
-
-            # Giải mã nhị phân
-            decoded_content = ""
-            for codec in ['utf-8-sig', 'utf-8', 'latin-1']:
-                try:
-                    decoded_content = raw_data.decode(codec)
-                    break
-                except: continue
-
-            if not decoded_content:
-                self.user_info = "LỖI: ĐỊNH DẠNG VĂN BẢN KHÔNG HỢP LỆ."
-                return
-
-            # Xử lý nội dung (Loại bỏ dòng trống đầu file my_device.txt)
-            lines = [l.strip() for l in decoded_content.splitlines() if l.strip()]
+            # 2. Giải mã bằng utf-8-sig (để tự loại bỏ mã BOM nếu có)
+            content = raw_bytes.decode('utf-8-sig', errors='replace')
             
-            # Tìm Header "Single ID"
-            header_idx = -1
-            for i, line in enumerate(lines):
-                if "Single ID" in line and "Model Name" in line:
-                    header_idx = i
-                    break
+            # 3. Làm sạch dữ liệu thô: Xóa bỏ dòng trống đầu và cuối file
+            content = content.strip()
             
-            if header_idx == -1:
-                self.user_info = "LỖI: FILE THIẾU CỘT TIÊU ĐỀ 'Single ID'."
+            # 4. Tìm vị trí chính xác của "Single ID" để bắt đầu đọc
+            start_index = content.find("Single ID")
+            if start_index == -1:
+                self.user_info = "LỖI: FILE KHÔNG CÓ TIÊU ĐỀ ĐÚNG MẪU."
                 return
-
-            # Phân tích các cột
-            headers = [h.strip() for h in lines[header_idx].split(',')]
-            try:
-                i_id = headers.index("Single ID")
-                i_name = headers.index("Name")
-                i_model = headers.index("Model Name")
-                i_imei = headers.index("IMEI")
-                i_status = headers.index("Status")
-                i_audit = headers.index("Last Audit")
-            except ValueError as ve:
-                self.user_info = f"LỖI CẤU TRÚC: Thiếu cột {str(ve)}"
-                return
-
-            temp_list = []
-            data_rows = lines[header_idx + 1:]
             
-            for idx, line in enumerate(data_rows, 1):
-                cols = [c.strip() for c in line.split(',')]
-                if len(cols) <= i_status: continue
-
-                if idx == 1:
-                    self.current_user_id = cols[i_id]
-                    self.current_user_name = cols[i_name]
+            data_content = content[start_index:]
+            
+            # 5. Sử dụng thư viện CSV chuẩn để xử lý dấu phẩy thông minh
+            f_stream = io.StringIO(data_content)
+            reader = csv.DictReader(f_stream)
+            
+            # Chuẩn hóa tên cột
+            reader.fieldnames = [fn.strip() for fn in reader.fieldnames]
+            
+            new_data = []
+            for i, row in enumerate(reader, 1):
+                # Lấy thông tin User từ dòng đầu tiên
+                if i == 1:
+                    self.current_user_id = row.get('Single ID', 'N/A')
+                    self.current_user_name = row.get('Name', 'Unknown')
                 
-                # Gộp cột audit nếu có dấu phẩy
-                audit_str = ", ".join(cols[i_audit:]) if i_audit < len(cols) else ""
-
-                temp_list.append({
-                    'stt': str(idx),
-                    'model': cols[i_model],
-                    'imei': cols[i_imei],
-                    'status': cols[i_status],
-                    'audit': audit_str
+                new_data.append({
+                    'stt': str(i),
+                    'model': row.get('Model Name', 'N/A'),
+                    'imei': row.get('IMEI', 'N/A'),
+                    'status': row.get('Status', 'N/A'),
+                    'audit': row.get('Last Audit', '')
                 })
 
-            if temp_list:
-                self.devices_data = temp_list
-                self.user_info = f"ID: {self.current_user_id} | {self.current_user_name}\nĐÃ NẠP {len(temp_list)} THIẾT BỊ THÀNH CÔNG!"
+            if new_data:
+                self.devices_data = new_data
+                self.user_info = f"ĐÃ NẠP: {len(new_data)} MÁY\nUSER: {self.current_user_id} - {self.current_user_name}"
+                # Gọi vẽ bảng
                 self.refresh_table()
                 self.play_beep('success')
             else:
-                self.user_info = "CẢNH BÁO: Không tìm thấy máy nào trong file."
+                self.user_info = "LỖI: FILE HỢP LỆ NHƯNG KHÔNG CÓ DỮ LIỆU MÁY."
 
         except Exception as e:
-            self.user_info = f"LỖI PHÁT SINH: {str(e)}"
+            self.user_info = f"LỖI PHÂN TÍCH: {str(e)}"
             self.play_beep('error')
 
     def refresh_table(self, *args):
-        try:
-            container = self.root.get_screen('main').ids.table_content
-            container.clear_widgets()
+        # Lấy container từ màn hình 'main'
+        main_screen = self.root.get_screen('main')
+        container = main_screen.ids.table_content
+        container.clear_widgets()
+        
+        # Xác định Model nào có máy đang bị 'Occupied/Mượn'
+        model_missing = {}
+        for d in self.devices_data:
+            if d['status'] in ['Occupied', 'Mượn']:
+                model_missing[d['model']] = True
+
+        from kivy.factory import Factory
+        for dev in self.devices_data:
+            is_fail = model_missing.get(dev['model'], False)
             
-            model_missing = {}
-            for d in self.devices_data:
-                if d['status'] in ['Occupied', 'Mượn']:
-                    model_missing[d['model']] = True
+            # Lọc dữ liệu theo chế độ Status
+            if self.filter_mode == "du" and is_fail: continue
+            if self.filter_mode == "thieu" and not is_fail: continue
 
-            from kivy.factory import Factory
-            for dev in self.devices_data:
-                is_fail = model_missing.get(dev['model'], False)
-                if self.filter_mode == "du" and is_fail: continue
-                if self.filter_mode == "thieu" and not is_fail: continue
+            # Màu sắc: Xanh (Đủ), Trắng (Thiếu/Cần trả)
+            bg = (1, 1, 1, 1) if is_fail else (0.1, 0.6, 0.2, 0.8)
+            txt = (0, 0, 0, 1) if is_fail else (1, 1, 1, 1)
 
-                bg = (1, 1, 1, 1) if is_fail else (0.1, 0.6, 0.2, 0.8)
-                txt = (0, 0, 0, 1) if is_fail else (1, 1, 1, 1)
-
-                container.add_widget(Factory.DataRow(
-                    stt=dev['stt'], model=dev['model'], imei=dev['imei'],
-                    status=dev['status'], audit=dev['audit'],
-                    bg_color=bg, text_color=txt
-                ))
-        except: pass
+            container.add_widget(Factory.DataRow(
+                stt=dev['stt'], model=dev['model'], imei=dev['imei'],
+                status=dev['status'], audit=dev['audit'],
+                bg_color=bg, text_color=txt
+            ))
 
     def toggle_filter(self):
         modes = ["all", "du", "thieu"]
