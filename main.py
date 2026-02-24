@@ -3,18 +3,11 @@ from kivy.app import App
 from kivy.lang import Builder
 from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.properties import ListProperty, StringProperty
-from kivy.core.audio import SoundLoader
 from kivy.clock import Clock
 from kivy.utils import platform
 import os
 import io
 import csv
-
-class MainScreen(Screen):
-    pass
-
-class ScanScreen(Screen):
-    pass
 
 KV = r'''
 <DataRow@BoxLayout>:
@@ -22,7 +15,6 @@ KV = r'''
     model: ''
     imei: ''
     status: ''
-    audit: ''
     bg_color: (1, 1, 1, 1)
     text_color: (0, 0, 0, 1)
     size_hint_y: None
@@ -41,24 +33,19 @@ KV = r'''
         color: root.text_color
     Label:
         text: root.model
-        size_hint_x: 0.25
+        size_hint_x: 0.4
         color: root.text_color
-        font_size: '9sp'
+        font_size: '10sp'
     Label:
         text: root.imei
         size_hint_x: 0.35
         color: root.text_color
-        font_size: '9sp'
+        font_size: '10sp'
     Label:
         text: root.status
         size_hint_x: 0.15
         bold: True
         color: (0.8, 0.1, 0.1, 1) if root.status in ['Occupied', 'Mượn'] else (0.1, 0.5, 0.1, 1)
-    Label:
-        text: root.audit
-        size_hint_x: 0.15
-        font_size: '7sp'
-        color: root.text_color
 
 <MainScreen>:
     name: 'main'
@@ -68,7 +55,7 @@ KV = r'''
         spacing: '8dp'
         canvas.before:
             Color:
-                rgba: (0.96, 0.96, 0.96, 1)
+                rgba: (0.95, 0.95, 0.95, 1)
             Rectangle:
                 pos: self.pos
                 size: self.size
@@ -76,35 +63,34 @@ KV = r'''
         Label:
             text: app.user_info
             size_hint_y: None
-            height: '90dp'
+            height: '100dp'
             color: (0.1, 0.3, 0.6, 1)
             bold: True
-            font_size: '11sp'
+            font_size: '12sp'
             halign: 'center'
             valign: 'middle'
             text_size: self.width, None
 
+        Button:
+            text: 'BẤM VÀO ĐÂY ĐỂ NẠP FILE TỪ THƯ MỤC DOWNLOAD'
+            size_hint_y: None
+            height: '50dp'
+            background_color: (0.2, 0.6, 0.3, 1)
+            on_release: app.scan_download_folder()
+
         BoxLayout:
             size_hint_y: None
-            height: '45dp'
+            height: '40dp'
             spacing: '5dp'
             Button:
-                text: 'CHỌN FILE .TXT'
-                background_color: (0.2, 0.5, 0.9, 1)
-                on_release: app.open_file_explorer()
-            Button:
-                text: 'STATUS'
+                text: 'LỌC TRẠNG THÁI'
                 on_release: app.toggle_filter()
-            Button:
-                text: 'XUẤT'
-                on_release: app.export_data()
 
         DataRow:
             stt: 'STT'
-            model: 'MODEL'
+            model: 'MODEL NAME'
             imei: 'IMEI'
-            status: 'T.THÁI'
-            audit: 'AUDIT'
+            status: 'TT'
             bg_color: (0.1, 0.4, 0.6, 1)
             text_color: (1, 1, 1, 1)
 
@@ -118,152 +104,88 @@ KV = r'''
 
 ScreenManager:
     MainScreen:
-    ScanScreen:
 '''
 
 class DeviceApp(App):
-    user_info = StringProperty("BẢN v1.7.3: CƠ CHẾ ĐỌC CƯỠNG BỨC\nNHẤN NÚT ĐỂ CHỌN FILE")
+    user_info = StringProperty("V1.8.0: CHẾ ĐỘ NẠP TRỰC TIẾP\nBƯỚC 1: Copy file my_device.txt vào mục Download\nBƯỚC 2: Nhấn nút xanh bên dưới")
     devices_data = ListProperty([])
     filter_mode = StringProperty("all")
-    current_user_id = ""
-    current_user_name = ""
     
-    selected_path = None
-
     def build(self):
         return Builder.load_string(KV)
 
-    def on_pause(self):
-        # Lưu trạng thái khi app bị đẩy vào nền
-        return True
+    def scan_download_folder(self):
+        # Đường dẫn thư mục Download chuẩn trên mọi máy Android
+        if platform == 'android':
+            base_path = "/storage/emulated/0/Download"
+        else:
+            base_path = "." # Cho PC test
 
-    def on_resume(self):
-        # Khi App quay lại từ trình chọn file, nếu có path thì xử lý ngay
-        if self.selected_path:
-            Clock.schedule_once(lambda dt: self.ultimate_parse_v173(self.selected_path), 0.5)
-        return True
-
-    def open_file_explorer(self):
-        self.user_info = "ĐANG MỞ HỆ THỐNG...\n(HÃY CHỌN FILE VÀ ĐỢI 1 GIÂY)"
-        try:
-            from plyer import filechooser
-            # Sử dụng tham số tối giản nhất
-            filechooser.open_file(on_selection=self.internal_callback)
-        except Exception as e:
-            self.user_info = f"LỖI: {str(e)}"
-
-    def internal_callback(self, selection):
-        if selection:
-            self.selected_path = selection[0]
-            # Thử chạy ngay, nếu kẹt thì on_resume sẽ "cứu"
-            Clock.schedule_once(lambda dt: self.ultimate_parse_v173(selection[0]), 0)
-
-    def ultimate_parse_v173(self, path):
-        if not path: return
-        self.user_info = f"ĐANG ĐỌC:\n{os.path.basename(path)}"
+        target_file = os.path.join(base_path, "my_device.txt")
         
+        self.user_info = f"ĐANG QUÉT FILE TẠI:\n{target_file}"
+        
+        if os.path.exists(target_file):
+            Clock.schedule_once(lambda dt: self.direct_read_v180(target_file), 0.5)
+        else:
+            self.user_info = "LỖI: KHÔNG TÌM THẤY FILE!\nHãy đảm bảo file tên đúng là: my_device.txt\nvà nằm trong thư mục Download."
+
+    def direct_read_v180(self, path):
         try:
-            # Bước 1: Đọc Binary - KHÔNG dùng os.path.exists vì nó hay báo sai trên Android URI
-            try:
-                with open(path, 'rb') as f:
-                    raw_bytes = f.read()
-            except:
-                # Nếu path URI thất bại, thử đoán path vật lý (Download)
-                fname = os.path.basename(path)
-                alt_path = f"/storage/emulated/0/Download/{fname}"
-                with open(alt_path, 'rb') as f:
-                    raw_bytes = f.read()
-
-            if not raw_bytes:
-                self.user_info = "LỖI: FILE KHÔNG CÓ DỮ LIỆU."
-                return
-
-            # Bước 2: Giải mã cực mạnh
-            text = raw_bytes.decode('utf-8-sig', errors='replace')
+            with open(path, 'rb') as f:
+                raw = f.read()
             
-            # Bước 3: Tìm điểm bắt đầu dữ liệu
+            text = raw.decode('utf-8-sig', errors='replace')
             marker = "Single ID"
             start_pos = text.find(marker)
-            if start_pos == -1:
-                self.user_info = "LỖI: FILE KHÔNG ĐÚNG MẪU (THIẾU SINGLE ID)."
-                return
-
-            # Bước 4: Xử lý CSV thủ công để tránh lỗi DictReader trên dữ liệu bẩn
-            lines = text[start_pos:].strip().splitlines()
-            headers = [h.strip() for h in lines[0].split(',')]
             
-            try:
-                i_id = headers.index("Single ID")
-                i_name = headers.index("Name")
-                i_model = headers.index("Model Name")
-                i_imei = headers.index("IMEI")
-                i_status = headers.index("Status")
-                i_audit = headers.index("Last Audit")
-            except:
-                self.user_info = "LỖI: FILE THIẾU CỘT QUAN TRỌNG."
+            if start_pos == -1:
+                self.user_info = "LỖI: File tìm thấy nhưng sai cấu trúc ERP."
                 return
 
+            clean_csv = text[start_pos:].strip()
+            f_stream = io.StringIO(clean_csv)
+            reader = csv.DictReader(f_stream)
+            
             temp_list = []
-            for i, line in enumerate(lines[1:], 1):
-                if not line.strip(): continue
-                # Sử dụng csv.reader để xử lý dấu phẩy trong nội dung
-                parts = list(csv.reader([line]))[0]
-                if len(parts) <= i_status: continue
-
-                if i == 1:
-                    self.current_user_id = parts[i_id]
-                    self.current_user_name = parts[i_name]
-
+            for i, row in enumerate(reader, 1):
                 temp_list.append({
                     'stt': str(i),
-                    'model': parts[i_model],
-                    'imei': parts[i_imei],
-                    'status': parts[i_status],
-                    'audit': parts[i_audit] if i_audit < len(parts) else ""
+                    'model': row.get('Model Name', 'N/A').strip(),
+                    'imei': row.get('IMEI', 'N/A').strip(),
+                    'status': row.get('Status', 'N/A').strip()
                 })
 
             if temp_list:
                 self.devices_data = temp_list
-                self.user_info = f"NẠP THÀNH CÔNG: {len(temp_list)} MÁY\nUSER: {self.current_user_id}"
+                self.user_info = f"NẠP THÀNH CÔNG {len(temp_list)} MÁY!\nFile: {os.path.basename(path)}"
                 self.refresh_table()
-                self.selected_path = None # Reset sau khi xong
             else:
-                self.user_info = "KHÔNG CÓ DỮ LIỆU TRONG FILE."
+                self.user_info = "LỖI: File không có dữ liệu máy."
 
         except Exception as e:
-            self.user_info = f"LỖI PHÂN TÍCH: {str(e)}"
+            self.user_info = f"LỖI ĐỌC FILE: {str(e)}\nHãy kiểm tra quyền truy cập bộ nhớ của App."
 
-    def refresh_table(self, *args):
+    def refresh_table(self):
         container = self.root.get_screen('main').ids.table_content
         container.clear_widgets()
         
-        model_missing = {}
-        for d in self.devices_data:
-            if d['status'] in ['Occupied', 'Mượn']:
-                model_missing[d['model']] = True
-
         from kivy.factory import Factory
         for dev in self.devices_data:
-            is_fail = model_missing.get(dev['model'], False)
-            if self.filter_mode == "du" and is_fail: continue
-            if self.filter_mode == "thieu" and not is_fail: continue
-
-            bg = (1, 1, 1, 1) if is_fail else (0.1, 0.6, 0.2, 0.8)
-            txt = (0, 0, 0, 1) if is_fail else (1, 1, 1, 1)
+            # Logic lọc
+            if self.filter_mode == "occupied" and dev['status'] not in ['Occupied', 'Mượn']: continue
+            
+            bg = (1, 1, 1, 1) if dev['status'] in ['Occupied', 'Mượn'] else (0.1, 0.6, 0.2, 0.8)
+            txt = (0, 0, 0, 1) if dev['status'] in ['Occupied', 'Mượn'] else (1, 1, 1, 1)
 
             container.add_widget(Factory.DataRow(
                 stt=dev['stt'], model=dev['model'], imei=dev['imei'],
-                status=dev['status'], audit=dev['audit'],
-                bg_color=bg, text_color=txt
+                status=dev['status'], bg_color=bg, text_color=txt
             ))
 
     def toggle_filter(self):
-        modes = ["all", "du", "thieu"]
-        self.filter_mode = modes[(modes.index(self.filter_mode) + 1) % 3]
+        self.filter_mode = "occupied" if self.filter_mode == "all" else "all"
         self.refresh_table()
-
-    def export_data(self):
-        pass
 
 if __name__ == '__main__':
     DeviceApp().run()
