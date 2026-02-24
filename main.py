@@ -9,12 +9,14 @@ from kivy.utils import platform
 import os
 import io
 
-# Xin quyền truy cập bộ nhớ mức cao nhất có thể cho ứng dụng
+# Xin quyền truy cập toàn diện trên Android
 if platform == 'android':
     from android.permissions import request_permissions, Permission
     request_permissions([
         Permission.READ_EXTERNAL_STORAGE, 
-        Permission.WRITE_EXTERNAL_STORAGE
+        Permission.WRITE_EXTERNAL_STORAGE,
+        # Quyền này giúp Android 11+ dễ thở hơn khi đọc file txt
+        "android.permission.MANAGE_EXTERNAL_STORAGE" 
     ])
 
 class MainScreen(Screen):
@@ -83,10 +85,10 @@ KV = r'''
         Label:
             text: app.user_info
             size_hint_y: None
-            height: '70dp'
-            color: (0.05, 0.25, 0.45, 1)
+            height: '75dp'
+            color: (0, 0.2, 0.5, 1)
             bold: True
-            font_size: '12sp'
+            font_size: '11sp'
             halign: 'center'
             valign: 'middle'
             text_size: self.width, None
@@ -132,7 +134,7 @@ ScreenManager:
 '''
 
 class DeviceApp(App):
-    user_info = StringProperty("V1.6.8: SẴN SÀNG\nVUI LÒNG NHẬN FILE")
+    user_info = StringProperty("V1.6.9: HỆ THỐNG SẴN SÀNG\nHÃY CHỌN FILE .TXT")
     devices_data = ListProperty([])
     filter_mode = StringProperty("all")
     current_user_id = ""
@@ -146,64 +148,69 @@ class DeviceApp(App):
             from plyer import filechooser
             filechooser.open_file(on_selection=self.handle_selection)
         except Exception as e:
-            self.user_info = f"LỖI KHỞI ĐỘNG CHỌN FILE: {str(e)}"
+            self.user_info = f"KHÔNG MỞ ĐƯỢC TRÌNH CHỌN FILE: {str(e)}"
 
     def handle_selection(self, selection):
         if not selection:
-            self.user_info = "BẠN ĐÃ HỦY CHỌN FILE."
+            self.user_info = "BẠN CHƯA CHỌN FILE NÀO."
             return
         
-        # Lấy đường dẫn file
         path = selection[0]
-        self.user_info = f"ĐANG XỬ LÝ:\n{os.path.basename(path)}"
-        
-        # Sử dụng Clock để tách biệt quá trình đọc file khỏi UI Thread
-        Clock.schedule_once(lambda dt: self.parse_binary_v168(path), 0.1)
+        self.user_info = f"ĐANG PHÂN TÍCH FILE:\n{os.path.basename(path)}"
+        # Đợi 0.5 giây để UI cập nhật chữ "Đang phân tích"
+        Clock.schedule_once(lambda dt: self.ultimate_parse_v169(path), 0.5)
 
-    def parse_binary_v168(self, path):
+    def ultimate_parse_v169(self, path):
         try:
-            # 1. ĐỌC NHỊ PHÂN TRỰC TIẾP (Bỏ qua mọi rào cản Text Mode)
-            if not os.path.exists(path):
-                # Thử fix đường dẫn ảo trên Android
-                self.user_info = "LỖI: KHÔNG TÌM THẤY TỆP.\nHãy thử để file trong thư mục DOWNLOAD."
+            raw_data = None
+            
+            # Kỹ thuật đọc cưỡng ép: Nếu open(path) thất bại, thử tìm file trong Download
+            try:
+                with open(path, 'rb') as f:
+                    raw_data = f.read()
+            except Exception as e:
+                # Nếu không đọc được từ đường dẫn ảo, thử tìm trong thư mục Download thật
+                filename = os.path.basename(path)
+                alt_path = f"/storage/emulated/0/Download/{filename}"
+                if os.path.exists(alt_path):
+                    with open(alt_path, 'rb') as f:
+                        raw_data = f.read()
+                else:
+                    self.user_info = f"LỖI TRUY CẬP: Android chặn đọc file này.\nThử chép file vào Download & chọn lại."
+                    return
+
+            if not raw_data or len(raw_data) < 10:
+                self.user_info = "LỖI: FILE KHÔNG CÓ DỮ LIỆU HOẶC QUÁ NHỎ."
                 return
 
-            with open(path, 'rb') as f:
-                raw_bytes = f.read()
-
-            if len(raw_bytes) == 0:
-                self.user_info = "LỖI: TỆP TRỐNG (0 BYTES)."
-                return
-
-            # 2. GIẢI MÃ THỦ CÔNG
-            content = ""
+            # Giải mã nhị phân
+            decoded_content = ""
             for codec in ['utf-8-sig', 'utf-8', 'latin-1']:
                 try:
-                    content = raw_bytes.decode(codec)
+                    decoded_content = raw_data.decode(codec)
                     break
                 except: continue
 
-            if not content:
-                self.user_info = "LỖI: KHÔNG THỂ GIẢI MÃ TỆP."
+            if not decoded_content:
+                self.user_info = "LỖI: ĐỊNH DẠNG VĂN BẢN KHÔNG HỢP LỆ."
                 return
 
-            # 3. LỌC DỮ LIỆU THỰC SỰ
-            lines = content.splitlines()
-            valid_lines = [l.strip() for l in lines if l.strip()] # Loại bỏ dòng trống
-
-            # Tìm dòng tiêu đề
+            # Xử lý nội dung (Loại bỏ dòng trống đầu file my_device.txt)
+            lines = [l.strip() for l in decoded_content.splitlines() if l.strip()]
+            
+            # Tìm Header "Single ID"
             header_idx = -1
-            for i, line in enumerate(valid_lines):
+            for i, line in enumerate(lines):
                 if "Single ID" in line and "Model Name" in line:
                     header_idx = i
                     break
             
             if header_idx == -1:
-                self.user_info = "LỖI: KHÔNG TÌM THẤY TIÊU ĐỀ 'Single ID'."
+                self.user_info = "LỖI: FILE THIẾU CỘT TIÊU ĐỀ 'Single ID'."
                 return
 
-            # 4. TRÍCH XUẤT CỘT
-            headers = [h.strip() for h in valid_lines[header_idx].split(',')]
+            # Phân tích các cột
+            headers = [h.strip() for h in lines[header_idx].split(',')]
             try:
                 i_id = headers.index("Single ID")
                 i_name = headers.index("Name")
@@ -211,22 +218,22 @@ class DeviceApp(App):
                 i_imei = headers.index("IMEI")
                 i_status = headers.index("Status")
                 i_audit = headers.index("Last Audit")
-            except ValueError as e:
-                self.user_info = f"LỖI THIẾU CỘT: {str(e)}"
+            except ValueError as ve:
+                self.user_info = f"LỖI CẤU TRÚC: Thiếu cột {str(ve)}"
                 return
 
             temp_list = []
-            data_rows = valid_lines[header_idx + 1:]
+            data_rows = lines[header_idx + 1:]
             
             for idx, line in enumerate(data_rows, 1):
                 cols = [c.strip() for c in line.split(',')]
-                if len(cols) < i_status: continue
+                if len(cols) <= i_status: continue
 
                 if idx == 1:
                     self.current_user_id = cols[i_id]
                     self.current_user_name = cols[i_name]
                 
-                # Gộp cột Audit nếu bị lệch do dấu phẩy
+                # Gộp cột audit nếu có dấu phẩy
                 audit_str = ", ".join(cols[i_audit:]) if i_audit < len(cols) else ""
 
                 temp_list.append({
@@ -237,17 +244,16 @@ class DeviceApp(App):
                     'audit': audit_str
                 })
 
-            # 5. CẬP NHẬT GIAO DIỆN
             if temp_list:
                 self.devices_data = temp_list
-                self.user_info = f"ID: {self.current_user_id} | {self.current_user_name}\nĐÃ NẠP THÀNH CÔNG: {len(temp_list)} MÁY"
+                self.user_info = f"ID: {self.current_user_id} | {self.current_user_name}\nĐÃ NẠP {len(temp_list)} THIẾT BỊ THÀNH CÔNG!"
                 self.refresh_table()
                 self.play_beep('success')
             else:
-                self.user_info = "LỖI: KHÔNG CÓ DỮ LIỆU HỢP LỆ."
+                self.user_info = "CẢNH BÁO: Không tìm thấy máy nào trong file."
 
         except Exception as e:
-            self.user_info = f"LỖI HỆ THỐNG: {str(e)}"
+            self.user_info = f"LỖI PHÁT SINH: {str(e)}"
             self.play_beep('error')
 
     def refresh_table(self, *args):
