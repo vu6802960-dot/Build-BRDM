@@ -76,8 +76,8 @@ KV = r'''
         Label:
             text: app.user_info
             size_hint_y: None
-            height: '80dp'
-            color: (0, 0.2, 0.5, 1)
+            height: '85dp'
+            color: (0.1, 0.3, 0.6, 1)
             bold: True
             font_size: '12sp'
             halign: 'center'
@@ -90,6 +90,7 @@ KV = r'''
             spacing: '5dp'
             Button:
                 text: 'NHẬP FILE'
+                background_color: (0.2, 0.4, 0.8, 1)
                 on_release: app.open_file_explorer()
             Button:
                 text: 'QUÉT'
@@ -125,74 +126,102 @@ ScreenManager:
 '''
 
 class DeviceApp(App):
-    user_info = StringProperty("V1.7.1: SẴN SÀNG\nNHẤN 'NHẬP FILE' ĐỂ BẮT ĐẦU")
+    user_info = StringProperty("V1.7.2: TRÌNH QUẢN LÝ THIẾT BỊ\nBẤM NHẬP FILE ĐỂ BẮT ĐẦU")
     devices_data = ListProperty([])
     filter_mode = StringProperty("all")
     current_user_id = ""
     current_user_name = ""
+    
+    # Biến để kiểm soát quá trình nạp
+    is_processing = False
 
     def build(self):
         return Builder.load_string(KV)
 
     def open_file_explorer(self):
-        # Reset trạng thái trước khi chọn
-        self.user_info = "HỆ THỐNG ĐANG MỞ BỘ NHỚ..."
+        if self.is_processing: return
+        
+        self.user_info = "ĐANG MỞ TRÌNH CHỌN FILE...\n(HÃY CHỌN ĐÚNG FILE .TXT)"
+        self.is_processing = True
+        
         try:
             from plyer import filechooser
-            # Không dùng filter để tránh lỗi Android nhận diện sai mime type
-            filechooser.open_file(on_selection=self.handle_selection)
+            # Dùng tham số cực kỳ cơ bản để tránh lỗi filter của Android
+            filechooser.open_file(on_selection=self.secure_callback)
+            
+            # Đề phòng callback bị treo, đặt một timer reset trạng thái sau 30 giây
+            Clock.schedule_once(self.reset_processing_status, 30)
+            
         except Exception as e:
-            self.user_info = f"LỖI KHỞI CHẠY: {str(e)}"
+            self.user_info = f"LỖI KHỞI ĐỘNG: {str(e)}"
+            self.is_processing = False
 
-    def handle_selection(self, selection):
-        # Nếu hàm này được gọi, dòng chữ chắc chắn phải đổi
+    def reset_processing_status(self, dt):
+        if self.is_processing and not self.devices_data:
+            self.is_processing = False
+            self.user_info = "QUÁ THỜI GIAN CHỜ.\nVUI LÒNG THỬ LẠI HOẶC CHỌN FILE KHÁC."
+
+    def secure_callback(self, selection):
+        # Ép thực hiện trong luồng Kivy để tránh lỗi đồng bộ
+        Clock.schedule_once(lambda dt: self.handle_selection_v172(selection), 0)
+
+    def handle_selection_v172(self, selection):
+        self.is_processing = False
+        
         if not selection:
-            self.user_info = "BẠN ĐÃ THOÁT MÀ CHƯA CHỌN FILE."
+            self.user_info = "BẠN CHƯA CHỌN FILE NÀO."
             return
 
         path = selection[0]
-        self.user_info = f"ĐÃ NHẬN TÍN HIỆU FILE:\n{os.path.basename(path)}"
+        # Hiển thị ngay tên file để người dùng biết app đã nhận được đường dẫn
+        self.user_info = f"ĐÃ NHẬN FILE: {os.path.basename(path)}\nĐANG PHÂN TÍCH DỮ LIỆU..."
         
-        # Ép hệ thống chạy parse ngay lập tức
-        Clock.schedule_once(lambda dt: self.parse_final_v171(path), 0.1)
+        # Gọi hàm đọc file
+        Clock.schedule_once(lambda dt: self.ultimate_file_reader(path), 0.5)
 
-    def parse_final_v171(self, path):
+    def ultimate_file_reader(self, path):
         try:
-            # 1. Đọc file ở mức nhị phân thấp nhất
-            if not os.path.exists(path):
-                # Thủ thuật cho Android: Nếu không thấy file, thử tìm trong cache
-                self.user_info = f"LỖI: Android chặn đường dẫn trực tiếp.\nHãy thử Copy file vào thư mục DOWNLOAD."
-                return
-
+            # 1. Đọc thô Binary (Cách duy nhất để xuyên thủng rào cản Android)
             with open(path, 'rb') as f:
-                content_bytes = f.read()
-
-            if not content_bytes:
-                self.user_info = "LỖI: Tệp tin rỗng."
-                return
-
-            # 2. Giải mã và chuẩn hóa dòng
-            text = content_bytes.decode('utf-8-sig', errors='replace')
-            # Tìm header Single ID bất kể nó nằm ở đâu
-            idx = text.find("Single ID")
-            if idx == -1:
-                self.user_info = "LỖI: File không chứa dữ liệu Single ID."
-                return
-
-            clean_csv = text[idx:].strip()
-            f_stream = io.StringIO(clean_csv)
-            reader = csv.DictReader(f_stream)
+                raw = f.read()
             
-            # Làm sạch header
+            if not raw:
+                self.user_info = "LỖI: FILE KHÔNG CÓ DỮ LIỆU (0 BYTES)."
+                return
+
+            # 2. Decode linh hoạt
+            text = ""
+            for codec in ['utf-8-sig', 'utf-8', 'latin-1']:
+                try:
+                    text = raw.decode(codec)
+                    break
+                except: continue
+            
+            if not text:
+                self.user_info = "LỖI: KHÔNG THỂ GIẢI MÃ NỘI DUNG."
+                return
+
+            # 3. Kỹ thuật "Cắt lớp": Tìm Header Single ID
+            start_point = text.find("Single ID")
+            if start_point == -1:
+                self.user_info = "LỖI: FILE SAI CẤU TRÚC ERP\n(KHÔNG TÌM THẤY 'SINGLE ID')"
+                return
+            
+            clean_data = text[start_point:].strip()
+            
+            # 4. Parse CSV với cơ chế an toàn
+            f_stream = io.StringIO(clean_csv)
+            # Tự động đoán định dạng (delimiter)
+            reader = csv.DictReader(f_stream)
             reader.fieldnames = [fn.strip() for fn in reader.fieldnames if fn]
 
-            temp_list = []
+            parsed_list = []
             for i, row in enumerate(reader, 1):
                 if i == 1:
                     self.current_user_id = row.get('Single ID', 'N/A').strip()
                     self.current_user_name = row.get('Name', 'Unknown').strip()
 
-                temp_list.append({
+                parsed_list.append({
                     'stt': str(i),
                     'model': row.get('Model Name', 'N/A').strip(),
                     'imei': row.get('IMEI', 'N/A').strip(),
@@ -200,21 +229,22 @@ class DeviceApp(App):
                     'audit': row.get('Last Audit', '').strip()
                 })
 
-            if temp_list:
-                self.devices_data = temp_list
-                self.user_info = f"THÀNH CÔNG! NẠP {len(temp_list)} MÁY\nUSER: {self.current_user_id}"
+            if parsed_list:
+                self.devices_data = parsed_list
+                self.user_info = f"NẠP THÀNH CÔNG: {len(parsed_list)} MÁY\nID: {self.current_user_id} | {self.current_user_name}"
                 self.refresh_table()
                 self.play_beep('success')
             else:
-                self.user_info = "LỖI: Cấu trúc CSV đúng nhưng không có dữ liệu."
+                self.user_info = "CẢNH BÁO: FILE TRỐNG HOẶC SAI ĐỊNH DẠNG."
 
         except Exception as e:
-            self.user_info = f"LỖI XỬ LÝ: {str(e)}"
+            self.user_info = f"LỖI PHÂN TÍCH: {str(e)}"
 
     def refresh_table(self, *args):
         container = self.root.get_screen('main').ids.table_content
         container.clear_widgets()
         
+        # Logic check thiếu/đủ
         model_missing = {}
         for d in self.devices_data:
             if d['status'] in ['Occupied', 'Mượn']:
