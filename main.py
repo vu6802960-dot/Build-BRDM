@@ -9,6 +9,7 @@ import os
 import io
 import csv
 
+# Giao diện ứng dụng (Kivy Language)
 KV = r'''
 <DataRow@BoxLayout>:
     stt: ''
@@ -35,12 +36,12 @@ KV = r'''
         text: root.model
         size_hint_x: 0.4
         color: root.text_color
-        font_size: '10sp'
+        font_size: '9sp'
     Label:
         text: root.imei
         size_hint_x: 0.35
         color: root.text_color
-        font_size: '10sp'
+        font_size: '9sp'
     Label:
         text: root.status
         size_hint_x: 0.15
@@ -66,25 +67,28 @@ KV = r'''
             height: '100dp'
             color: (0.1, 0.3, 0.6, 1)
             bold: True
-            font_size: '12sp'
+            font_size: '11sp'
             halign: 'center'
             valign: 'middle'
             text_size: self.width, None
 
         Button:
-            text: 'BẤM VÀO ĐÂY ĐỂ NẠP FILE TỪ THƯ MỤC DOWNLOAD'
+            text: 'BẤM ĐỂ NẠP FILE TỪ MỤC DOWNLOAD'
             size_hint_y: None
-            height: '50dp'
-            background_color: (0.2, 0.6, 0.3, 1)
+            height: '60dp'
+            background_color: (0.1, 0.5, 0.2, 1)
             on_release: app.scan_download_folder()
 
         BoxLayout:
             size_hint_y: None
             height: '40dp'
-            spacing: '5dp'
+            spacing: '10dp'
             Button:
-                text: 'LỌC TRẠNG THÁI'
+                text: 'LỌC MÁY THIẾU'
                 on_release: app.toggle_filter()
+            Button:
+                text: 'XÓA BẢNG'
+                on_release: app.clear_data()
 
         DataRow:
             stt: 'STT'
@@ -107,85 +111,122 @@ ScreenManager:
 '''
 
 class DeviceApp(App):
-    user_info = StringProperty("V1.8.0: CHẾ ĐỘ NẠP TRỰC TIẾP\nBƯỚC 1: Copy file my_device.txt vào mục Download\nBƯỚC 2: Nhấn nút xanh bên dưới")
+    user_info = StringProperty("BẢN v1.8.1: NẠP FILE TRỰC TIẾP\n1. Copy file 'my_device.txt' vào thư mục Download\n2. Nhấn nút xanh để nạp dữ liệu.")
     devices_data = ListProperty([])
     filter_mode = StringProperty("all")
     
     def build(self):
         return Builder.load_string(KV)
 
-    def scan_download_folder(self):
-        # Đường dẫn thư mục Download chuẩn trên mọi máy Android
+    def on_start(self):
+        # Yêu cầu quyền truy cập khi App bắt đầu
         if platform == 'android':
-            base_path = "/storage/emulated/0/Download"
-        else:
-            base_path = "." # Cho PC test
+            from android.permissions import request_permissions, Permission
+            request_permissions([
+                Permission.READ_EXTERNAL_STORAGE,
+                Permission.WRITE_EXTERNAL_STORAGE
+            ])
 
-        target_file = os.path.join(base_path, "my_device.txt")
-        
-        self.user_info = f"ĐANG QUÉT FILE TẠI:\n{target_file}"
-        
-        if os.path.exists(target_file):
-            Clock.schedule_once(lambda dt: self.direct_read_v180(target_file), 0.5)
-        else:
-            self.user_info = "LỖI: KHÔNG TÌM THẤY FILE!\nHãy đảm bảo file tên đúng là: my_device.txt\nvà nằm trong thư mục Download."
+    def scan_download_folder(self):
+        """Tự động quét file mà không cần mở trình chọn của Android"""
+        try:
+            # Các đường dẫn phổ biến trên Android
+            if platform == 'android':
+                paths_to_check = [
+                    "/storage/emulated/0/Download/my_device.txt",
+                    "/sdcard/Download/my_device.txt"
+                ]
+            else:
+                # Dành cho việc test trên máy tính
+                paths_to_check = ["my_device.txt", "Download/my_device.txt"]
 
-    def direct_read_v180(self, path):
+            target_file = None
+            for p in paths_to_check:
+                if os.path.exists(p):
+                    target_file = p
+                    break
+            
+            if target_file:
+                self.user_info = f"ĐÃ TÌM THẤY FILE!\nĐang nạp dữ liệu..."
+                Clock.schedule_once(lambda dt: self.process_data_v181(target_file), 0.5)
+            else:
+                self.user_info = "LỖI: KHÔNG TÌM THẤY FILE!\nHãy đảm bảo file tên là: my_device.txt\nvà đã copy vào thư mục Download."
+        except Exception as e:
+            self.user_info = f"LỖI HỆ THỐNG: {str(e)}"
+
+    def process_data_v181(self, path):
         try:
             with open(path, 'rb') as f:
                 raw = f.read()
             
+            # Giải mã hỗ trợ UTF-8 có BOM
             text = raw.decode('utf-8-sig', errors='replace')
+            
+            # Tìm header Single ID
             marker = "Single ID"
             start_pos = text.find(marker)
             
             if start_pos == -1:
-                self.user_info = "LỖI: File tìm thấy nhưng sai cấu trúc ERP."
+                self.user_info = "LỖI: File không đúng định dạng ERP (Thiếu Single ID)."
                 return
 
             clean_csv = text[start_pos:].strip()
             f_stream = io.StringIO(clean_csv)
             reader = csv.DictReader(f_stream)
             
-            temp_list = []
+            # Chuẩn hóa tên cột (loại bỏ khoảng trắng)
+            reader.fieldnames = [fn.strip() for fn in reader.fieldnames if fn]
+
+            new_list = []
             for i, row in enumerate(reader, 1):
-                temp_list.append({
+                new_list.append({
                     'stt': str(i),
-                    'model': row.get('Model Name', 'N/A').strip(),
-                    'imei': row.get('IMEI', 'N/A').strip(),
-                    'status': row.get('Status', 'N/A').strip()
+                    'model': str(row.get('Model Name', 'N/A')).strip(),
+                    'imei': str(row.get('IMEI', 'N/A')).strip(),
+                    'status': str(row.get('Status', 'N/A')).strip()
                 })
 
-            if temp_list:
-                self.devices_data = temp_list
-                self.user_info = f"NẠP THÀNH CÔNG {len(temp_list)} MÁY!\nFile: {os.path.basename(path)}"
+            if new_list:
+                self.devices_data = new_list
+                self.user_info = f"NẠP THÀNH CÔNG: {len(new_list)} MÁY.\nFile: {os.path.basename(path)}"
                 self.refresh_table()
             else:
-                self.user_info = "LỖI: File không có dữ liệu máy."
-
+                self.user_info = "LỖI: File tìm thấy nhưng không có dữ liệu máy."
+                
         except Exception as e:
-            self.user_info = f"LỖI ĐỌC FILE: {str(e)}\nHãy kiểm tra quyền truy cập bộ nhớ của App."
+            self.user_info = f"LỖI PHÂN TÍCH: {str(e)}"
 
     def refresh_table(self):
-        container = self.root.get_screen('main').ids.table_content
-        container.clear_widgets()
-        
-        from kivy.factory import Factory
-        for dev in self.devices_data:
-            # Logic lọc
-            if self.filter_mode == "occupied" and dev['status'] not in ['Occupied', 'Mượn']: continue
+        try:
+            container = self.root.get_screen('main').ids.table_content
+            container.clear_widgets()
             
-            bg = (1, 1, 1, 1) if dev['status'] in ['Occupied', 'Mượn'] else (0.1, 0.6, 0.2, 0.8)
-            txt = (0, 0, 0, 1) if dev['status'] in ['Occupied', 'Mượn'] else (1, 1, 1, 1)
+            from kivy.factory import Factory
+            for dev in self.devices_data:
+                # Chế độ lọc
+                if self.filter_mode == "occupied" and dev['status'] not in ['Occupied', 'Mượn']:
+                    continue
+                
+                # Màu sắc hiển thị
+                is_fail = dev['status'] in ['Occupied', 'Mượn']
+                bg = (1, 1, 1, 1) if is_fail else (0.1, 0.6, 0.2, 0.8)
+                txt = (0, 0, 0, 1) if is_fail else (1, 1, 1, 1)
 
-            container.add_widget(Factory.DataRow(
-                stt=dev['stt'], model=dev['model'], imei=dev['imei'],
-                status=dev['status'], bg_color=bg, text_color=txt
-            ))
+                container.add_widget(Factory.DataRow(
+                    stt=dev['stt'], model=dev['model'], imei=dev['imei'],
+                    status=dev['status'], bg_color=bg, text_color=txt
+                ))
+        except:
+            pass
 
     def toggle_filter(self):
         self.filter_mode = "occupied" if self.filter_mode == "all" else "all"
         self.refresh_table()
+
+    def clear_data(self):
+        self.devices_data = []
+        self.refresh_table()
+        self.user_info = "ĐÃ XÓA DỮ LIỆU TẠM THỜI."
 
 if __name__ == '__main__':
     DeviceApp().run()
